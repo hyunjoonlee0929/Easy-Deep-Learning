@@ -1,0 +1,11 @@
+age,bmi,glucose,smoker,exercise,target
+34,22.1,95,no,high,0
+45,28.4,130,yes,low,1
+29,24.0,102,no,medium,0
+54,31.2,145,yes,low,1
+39,26.3,110,no,medium,0
+61,33.5,160,yes,low,1
+42,27.0,118,no,high,0
+48,29.8,135,yes,medium,1
+36,23.7,99,no,high,0
+57,32.4,152,yes,low,1

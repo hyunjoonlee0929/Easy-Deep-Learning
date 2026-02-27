@@ -1,0 +1,15 @@
+# Default model/training configuration
+
+default:
+  task_type: classification
+  model_type: xgboost
+  target_column: target
+  top_k_features: 10
+
+dnn:
+  hidden_layers: [128, 64, 32]
+  dropout: 0.2
+  learning_rate: 0.001
+  max_epochs: 200
+  patience: 20
+  batch_size: 32
