@@ -1,4 +1,4 @@
-"""Data validation utilities for tabular and multi-omics data."""
+"""Data validation utilities for tabular data."""
 
 from __future__ import annotations
 

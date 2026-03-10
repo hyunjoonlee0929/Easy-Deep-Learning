@@ -1,0 +1,11 @@
+text,label
+"What is the capital of France?",LOC
+"Who invented the telephone?",HUM
+"When did the Berlin Wall fall?",NUM
+"Name a mammal that can fly.",ENTY
+"How many bones are in the human body?",NUM
+"Where is the Eiffel Tower located?",LOC
+"What is photosynthesis?",DESC
+"Who wrote '1984'?",HUM
+"What is the tallest mountain?",ENTY
+"When is the next leap year?",NUM

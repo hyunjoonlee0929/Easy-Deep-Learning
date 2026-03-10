@@ -1,4 +1,4 @@
-"""Training orchestration for OmniInsight models."""
+"""Training orchestration for Easy Deep Learning models."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
 
 from .model_engine import (
-    DNNClassifier,
-    DNNRegressor,
     ModelEngine,
     ModelResult,
     PredictableModel,
@@ -44,56 +42,26 @@ class Trainer:
 
     def _build_dnn(self, X_train: Any, y_train: Any, cfg: TrainingConfig) -> PredictableModel:
         """Construct task-specific DNN model."""
-        input_dim = int(X_train.shape[1])
-        try:
-            if cfg.task_type == "classification":
-                n_classes = int(np.unique(y_train).shape[0])
-                return DNNClassifier(
-                    input_dim=input_dim,
-                    n_classes=n_classes,
-                    hidden_layers=cfg.dnn_hidden_layers,
-                    dropout=cfg.dnn_dropout,
-                    learning_rate=cfg.dnn_learning_rate,
-                    max_epochs=cfg.dnn_max_epochs,
-                    patience=cfg.dnn_patience,
-                    batch_size=cfg.dnn_batch_size,
-                    val_split=cfg.dnn_val_split,
-                    random_state=cfg.random_state,
-                )
-
-            if cfg.task_type == "regression":
-                return DNNRegressor(
-                    input_dim=input_dim,
-                    hidden_layers=cfg.dnn_hidden_layers,
-                    dropout=cfg.dnn_dropout,
-                    learning_rate=cfg.dnn_learning_rate,
-                    max_epochs=cfg.dnn_max_epochs,
-                    patience=cfg.dnn_patience,
-                    batch_size=cfg.dnn_batch_size,
-                    val_split=cfg.dnn_val_split,
-                    random_state=cfg.random_state,
-                )
-        except ImportError:
-            if cfg.task_type == "classification":
-                return SklearnDNNClassifier(
-                    hidden_layers=cfg.dnn_hidden_layers,
-                    dropout=cfg.dnn_dropout,
-                    learning_rate=cfg.dnn_learning_rate,
-                    max_epochs=cfg.dnn_max_epochs,
-                    patience=cfg.dnn_patience,
-                    batch_size=cfg.dnn_batch_size,
-                    random_state=cfg.random_state,
-                )
-            if cfg.task_type == "regression":
-                return SklearnDNNRegressor(
-                    hidden_layers=cfg.dnn_hidden_layers,
-                    dropout=cfg.dnn_dropout,
-                    learning_rate=cfg.dnn_learning_rate,
-                    max_epochs=cfg.dnn_max_epochs,
-                    patience=cfg.dnn_patience,
-                    batch_size=cfg.dnn_batch_size,
-                    random_state=cfg.random_state,
-                )
+        if cfg.task_type == "classification":
+            return SklearnDNNClassifier(
+                hidden_layers=cfg.dnn_hidden_layers,
+                dropout=cfg.dnn_dropout,
+                learning_rate=cfg.dnn_learning_rate,
+                max_epochs=cfg.dnn_max_epochs,
+                patience=cfg.dnn_patience,
+                batch_size=cfg.dnn_batch_size,
+                random_state=cfg.random_state,
+            )
+        if cfg.task_type == "regression":
+            return SklearnDNNRegressor(
+                hidden_layers=cfg.dnn_hidden_layers,
+                dropout=cfg.dnn_dropout,
+                learning_rate=cfg.dnn_learning_rate,
+                max_epochs=cfg.dnn_max_epochs,
+                patience=cfg.dnn_patience,
+                batch_size=cfg.dnn_batch_size,
+                random_state=cfg.random_state,
+            )
 
         raise ValueError("task_type must be 'classification' or 'regression'.")
 
@@ -114,13 +82,19 @@ class Trainer:
 
         if cfg.task_type == "classification":
             label_encoder = LabelEncoder()
-            y_train_encoded = label_encoder.fit_transform(np.asarray(y_train))
+            combined = np.concatenate([np.asarray(y_train), np.asarray(y_test)])
+            label_encoder.fit(combined)
+            y_train_encoded = label_encoder.transform(np.asarray(y_train))
             y_test_encoded = label_encoder.transform(np.asarray(y_test))
             label_classes = [str(c) for c in label_encoder.classes_]
 
         if cfg.model_type == "xgboost":
             num_classes = int(np.unique(y_train_encoded).shape[0]) if cfg.task_type == "classification" else None
-            model = self.model_engine.build_xgboost(cfg.task_type, num_classes=num_classes)
+            model = self.model_engine.build_xgboost(
+                cfg.task_type,
+                num_classes=num_classes,
+                random_state=cfg.random_state,
+            )
             X_train_fit = X_train.toarray() if hasattr(X_train, "toarray") else X_train
             X_test_fit = X_test.toarray() if hasattr(X_test, "toarray") else X_test
         elif cfg.model_type == "dnn":
@@ -152,4 +126,5 @@ class Trainer:
             model=model,
             task_type=cfg.task_type,
             label_classes=label_classes,
+            label_encoder=label_encoder,
         )

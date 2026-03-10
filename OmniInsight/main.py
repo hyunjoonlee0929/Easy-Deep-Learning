@@ -1,128 +1,221 @@
-"""Entrypoint for running the full OmniInsight pipeline."""
+"""Easy Deep Learning CLI entrypoint."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Any
 
-import pandas as pd
-import yaml
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_MAX_THREADS"] = "1"
+os.environ["KMP_USE_SHM"] = "0"
 
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from OmniInsight.adapters.bio_adapter import BioAdapter, BioAdapterConfig
-from OmniInsight.adapters.general_adapter import GeneralAdapter, GeneralAdapterConfig
 from OmniInsight.core.logging_utils import configure_logging
 
 logger = logging.getLogger(__name__)
 
 
-def load_config(path: Path) -> dict[str, Any]:
-    """Load YAML configuration file."""
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def build_parser() -> argparse.ArgumentParser:
+    """Build CLI parser with train/test subcommands."""
+    parser = argparse.ArgumentParser(description="Easy Deep Learning")
+    parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
 
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Run OmniInsight end-to-end pipeline")
-    parser.add_argument(
-        "--data",
-        type=Path,
-        default=Path("OmniInsight/data/example_dataset.csv"),
-        help="Path to input CSV file",
-    )
-    parser.add_argument(
-        "--protein-data",
-        type=Path,
-        default=None,
-        help="Optional protein CSV for bio adapter mode",
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path("OmniInsight/config/model_config.yaml"),
-        help="Path to model configuration YAML",
-    )
-    parser.add_argument(
-        "--task-type",
-        choices=["classification", "regression"],
-        default=None,
-        help="Override task type",
-    )
-    parser.add_argument(
-        "--model-type",
-        choices=["xgboost", "dnn"],
-        default=None,
-        help="Override model type",
-    )
-    parser.add_argument("--target-column", type=str, default=None, help="Override target column")
-    parser.add_argument("--top-k", type=int, default=None, help="Number of top SHAP features")
-    parser.add_argument("--use-bio-adapter", action="store_true", help="Use BioAdapter for multi-omics mode")
-    parser.add_argument("--output", type=Path, default=None, help="Optional output path for JSON report")
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level",
-    )
-    return parser.parse_args()
+    train = subparsers.add_parser("train", help="Train a model and save artifacts")
+    train.add_argument("--data", type=Path, required=True, help="Training CSV path")
+    train.add_argument("--target-column", type=str, required=True, help="Target column name")
+    train.add_argument("--task-type", choices=["classification", "regression"], required=True)
+    train.add_argument("--model-type", choices=["auto", "dnn", "xgboost", "rf", "svm", "knn", "lr", "gbm"], default="dnn")
+    train.add_argument("--config", type=Path, default=Path("OmniInsight/config/model_config.yaml"))
+    train.add_argument("--seed", type=int, default=42)
+    train.add_argument("--model-params", type=str, default="{}", help="JSON string of model hyperparameters")
 
+    test = subparsers.add_parser("test", help="Evaluate a saved run on new data")
+    test.add_argument("--from-run", type=str, required=True, help="Run ID under runs/")
+    test.add_argument("--data", type=Path, required=True, help="Test CSV path")
+    test.add_argument("--target-column", type=str, default=None, help="Optional override target column")
 
-def _build_general_config(config_raw: dict[str, Any], args: argparse.Namespace) -> GeneralAdapterConfig:
-    default_cfg = config_raw["default"]
-    dnn_cfg = config_raw.get("dnn", {})
+    img_train = subparsers.add_parser("image-train", help="Train CNN on image dataset")
+    img_train.add_argument("--dataset", choices=["MNIST", "FashionMNIST", "CIFAR10", "SVHN", "EMNIST"], required=True)
+    img_train.add_argument("--epochs", type=int, default=5)
+    img_train.add_argument("--lr", type=float, default=1e-3)
+    img_train.add_argument("--batch-size", type=int, default=64)
+    img_train.add_argument("--seed", type=int, default=42)
+    img_train.add_argument("--data-dir", type=Path, default=Path("/tmp/easy_dl"))
+    img_train.add_argument("--model-arch", choices=["cnn", "resnet18"], default="cnn")
 
-    return GeneralAdapterConfig(
-        target_column=args.target_column or default_cfg["target_column"],
-        task_type=args.task_type or default_cfg["task_type"],
-        model_type=args.model_type or default_cfg["model_type"],
-        top_k_features=args.top_k or default_cfg.get("top_k_features", 10),
-        dnn_hidden_layers=dnn_cfg.get("hidden_layers", [128, 64, 32]),
-        dnn_dropout=float(dnn_cfg.get("dropout", 0.2)),
-        dnn_learning_rate=float(dnn_cfg.get("learning_rate", 1e-3)),
-        dnn_max_epochs=int(dnn_cfg.get("max_epochs", 200)),
-        dnn_patience=int(dnn_cfg.get("patience", 20)),
-        dnn_batch_size=int(dnn_cfg.get("batch_size", 32)),
-    )
+    img_test = subparsers.add_parser("image-test", help="Evaluate saved CNN run")
+    img_test.add_argument("--from-run", type=str, required=True)
+
+    txt_train = subparsers.add_parser("text-train", help="Train RNN on text dataset")
+    txt_train.add_argument("--dataset", choices=["AG_NEWS_SAMPLE", "SST2_SAMPLE", "TREC_SAMPLE"], default="AG_NEWS_SAMPLE")
+    txt_train.add_argument("--data", type=Path, default=None, help="Optional CSV path for text dataset")
+    txt_train.add_argument("--text-column", type=str, default="text")
+    txt_train.add_argument("--label-column", type=str, default="label")
+    txt_train.add_argument("--max-vocab", type=int, default=5000)
+    txt_train.add_argument("--max-len", type=int, default=100)
+    txt_train.add_argument("--epochs", type=int, default=3)
+    txt_train.add_argument("--lr", type=float, default=1e-3)
+    txt_train.add_argument("--batch-size", type=int, default=64)
+    txt_train.add_argument("--seed", type=int, default=42)
+    txt_train.add_argument("--data-dir", type=Path, default=Path("/tmp/easy_dl"))
+    txt_train.add_argument("--stopwords", action="store_true")
+    txt_train.add_argument("--ngram", type=int, default=1)
+    txt_train.add_argument("--bpe", action="store_true")
+    txt_train.add_argument("--bpe-vocab-size", type=int, default=200)
+    txt_train.add_argument("--model-arch", choices=["gru", "lstm", "textcnn", "transformer"], default="gru")
+
+    txt_test = subparsers.add_parser("text-test", help="Evaluate saved RNN run")
+    txt_test.add_argument("--from-run", type=str, required=True)
+    txt_test.add_argument("--data", type=Path, default=None)
+
+    automl = subparsers.add_parser("automl", help="Train multiple models and build a leaderboard")
+    automl.add_argument("--data", type=Path, required=True, help="Training CSV path")
+    automl.add_argument("--target-column", type=str, required=True, help="Target column name")
+    automl.add_argument("--task-type", choices=["classification", "regression"], required=True)
+    automl.add_argument("--config", type=Path, default=Path("OmniInsight/config/model_config.yaml"))
+    automl.add_argument("--seed", type=int, default=42)
+    automl.add_argument("--max-models", type=int, default=6)
+
+    return parser
 
 
 def main() -> None:
-    """Run full pipeline and print structured JSON report."""
-    args = parse_args()
+    """Execute CLI command."""
+    parser = build_parser()
+    args = parser.parse_args()
     configure_logging(args.log_level)
 
-    logger.info("Loading config from %s", args.config)
-    cfg = load_config(args.config)
+    if args.command == "train":
+        from OmniInsight.core.workflows import train_and_save
+        try:
+            model_params = json.loads(args.model_params)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid --model-params JSON: {exc}") from exc
 
-    logger.info("Reading data from %s", args.data)
-    df = pd.read_csv(args.data)
+        result = train_and_save(
+            data_path=args.data,
+            config_path=args.config,
+            target_column=args.target_column,
+            task_type=args.task_type,
+            model_type=args.model_type,
+            seed=args.seed,
+            model_params=model_params,
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "train",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
+        print(json.dumps(payload, indent=2))
+        return
 
-    general_cfg = _build_general_config(cfg, args)
+    if args.command == "test":
+        from OmniInsight.core.workflows import test_from_run
+        payload = test_from_run(
+            run_id=args.from_run,
+            test_data_path=args.data,
+            target_column=args.target_column,
+            save_artifacts=True,
+        )
+        print(json.dumps(payload, indent=2))
+        return
 
-    if args.use_bio_adapter:
-        protein_df = pd.read_csv(args.protein_data) if args.protein_data else None
-        adapter = BioAdapter()
-        adapter_cfg = BioAdapterConfig(**general_cfg.__dict__, protein_df=protein_df)
-        logger.info("Running BioAdapter")
-        report = adapter.run(df=df, config=adapter_cfg)
-    else:
-        adapter = GeneralAdapter()
-        logger.info("Running GeneralAdapter")
-        report = adapter.run(df=df, config=general_cfg)
+    if args.command == "image-train":
+        from OmniInsight.core.torch_workflows import train_cnn_image
 
-    output = json.dumps(report, indent=2)
-    print(output)
+        result = train_cnn_image(
+            dataset_name=args.dataset,
+            epochs=args.epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+            seed=args.seed,
+            data_dir=args.data_dir,
+            model_arch=args.model_arch,
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "image-train",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
+        print(json.dumps(payload, indent=2))
+        return
 
-    if args.output is not None:
-        args.output.write_text(output, encoding="utf-8")
-        logger.info("Saved report to %s", args.output)
+    if args.command == "image-test":
+        from OmniInsight.core.torch_workflows import test_cnn_image
+
+        payload = test_cnn_image(args.from_run)
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "text-train":
+        from OmniInsight.core.torch_workflows import train_rnn_text
+
+        result = train_rnn_text(
+            dataset_name=args.dataset,
+            epochs=args.epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+            seed=args.seed,
+            data_dir=args.data_dir,
+            data_path=args.data,
+            text_column=args.text_column,
+            label_column=args.label_column,
+            max_vocab=args.max_vocab,
+            max_len=args.max_len,
+            stopwords=args.stopwords,
+            ngram=args.ngram,
+            bpe=args.bpe,
+            bpe_vocab_size=args.bpe_vocab_size,
+            model_arch=args.model_arch,
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "text-train",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "text-test":
+        from OmniInsight.core.torch_workflows import test_rnn_text
+
+        payload = test_rnn_text(args.from_run, data_path=args.data)
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "automl":
+        from OmniInsight.core.workflows import run_leaderboard
+
+        payload = run_leaderboard(
+            data_path=args.data,
+            config_path=args.config,
+            target_column=args.target_column,
+            task_type=args.task_type,
+            seed=args.seed,
+            max_models=args.max_models,
+        )
+        print(json.dumps(payload, indent=2))
+        return
+
+    parser.error("Unknown command")
 
 
 if __name__ == "__main__":

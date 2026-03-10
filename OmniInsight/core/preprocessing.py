@@ -32,7 +32,12 @@ class AutoPreprocessor:
         self.test_size = test_size
         self.random_state = random_state
 
-    def fit_transform(self, df: pd.DataFrame, target_column: str) -> ProcessedData:
+    def fit_transform(
+        self,
+        df: pd.DataFrame,
+        target_column: str,
+        task_type: str | None = None,
+    ) -> ProcessedData:
         """Fit preprocessing pipeline and return processed splits."""
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' does not exist.")
@@ -68,7 +73,10 @@ class AutoPreprocessor:
             remainder="drop",
         )
 
-        can_stratify = y.nunique() > 1 and y.nunique() <= max(20, int(len(y) * 0.1))
+        if task_type == "classification":
+            can_stratify = y.nunique() > 1 and y.nunique() <= max(20, int(len(y) * 0.1))
+        else:
+            can_stratify = False
         X_train, X_test, y_train, y_test = train_test_split(
             X,
             y,

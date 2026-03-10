@@ -1,0 +1,87 @@
+"""HTML reporting utilities for Easy Deep Learning runs."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+
+def _read_json(path: Path) -> dict[str, Any] | list[Any] | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _table_rows(payload: dict[str, Any]) -> str:
+    rows = []
+    for key, value in payload.items():
+        rows.append(f"<tr><th>{key}</th><td>{value}</td></tr>")
+    return "\n".join(rows)
+
+
+def generate_html_report(run_path: Path) -> Path:
+    """Generate a lightweight HTML report for a run."""
+    metrics = _read_json(run_path / "metrics.json") or {}
+    model_info = _read_json(run_path / "model_info.json") or {}
+    model_params = _read_json(run_path / "model_params.json") or {}
+    validation = _read_json(run_path / "validation_report.json") or {}
+    predictions = _read_json(run_path / "predictions_preview.json") or {}
+    has_cm = (run_path / "confusion_matrix.png").exists()
+    has_roc = (run_path / "roc_curve.png").exists()
+    has_scatter = (run_path / "prediction_scatter.png").exists()
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Easy Deep Learning Report</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }}
+    h1 {{ margin-bottom: 8px; }}
+    table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+    th, td {{ border: 1px solid #e5e7eb; padding: 8px; text-align: left; }}
+    th {{ background: #f9fafb; width: 240px; }}
+    .section {{ margin-top: 24px; }}
+  </style>
+</head>
+<body>
+  <h1>Easy Deep Learning Report</h1>
+  <div>Run path: {run_path.resolve()}</div>
+  <div>Generated: {datetime.now().isoformat(timespec="seconds")}</div>
+
+  <div class="section">
+    <h2>Model Info</h2>
+    <table>{_table_rows(model_info)}</table>
+  </div>
+
+  <div class="section">
+    <h2>Metrics</h2>
+    <table>{_table_rows(metrics)}</table>
+  </div>
+
+  <div class="section">
+    <h2>Model Params</h2>
+    <table>{_table_rows(model_params)}</table>
+  </div>
+
+  <div class="section">
+    <h2>Validation Summary</h2>
+    <pre>{json.dumps(validation, indent=2)}</pre>
+  </div>
+
+  <div class="section">
+    <h2>Prediction Preview</h2>
+    <pre>{json.dumps(predictions, indent=2)}</pre>
+  </div>
+
+  {"<div class='section'><h2>Confusion Matrix</h2><img src='confusion_matrix.png' style='max-width: 640px; width: 100%;'/></div>" if has_cm else ""}
+  {"<div class='section'><h2>ROC Curve</h2><img src='roc_curve.png' style='max-width: 640px; width: 100%;'/></div>" if has_roc else ""}
+  {"<div class='section'><h2>Prediction Scatter</h2><img src='prediction_scatter.png' style='max-width: 640px; width: 100%;'/></div>" if has_scatter else ""}
+</body>
+</html>
+"""
+    report_path = run_path / "report.html"
+    report_path.write_text(html, encoding="utf-8")
+    return report_path

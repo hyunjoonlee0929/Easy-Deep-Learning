@@ -1,10 +1,9 @@
-# Default model/training configuration
+# Easy Deep Learning default configuration
 
 default:
   task_type: classification
-  model_type: xgboost
+  model_type: dnn
   target_column: target
-  top_k_features: 10
 
 dnn:
   hidden_layers: [128, 64, 32]

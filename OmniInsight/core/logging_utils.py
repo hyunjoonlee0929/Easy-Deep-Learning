@@ -1,4 +1,4 @@
-"""Logging setup utilities for OmniInsight."""
+"""Logging setup utilities for Easy Deep Learning."""
 
 from __future__ import annotations
 

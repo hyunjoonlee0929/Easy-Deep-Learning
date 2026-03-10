@@ -1,1 +1,1 @@
-"""OmniInsight package."""
+"""Easy Deep Learning package."""
