@@ -24,7 +24,7 @@ Easy Deep Learning은 사용자가 CSV 데이터로 분류/회귀 문제를 빠�
 ## 프로젝트 구조
 
 ```text
-OmniInsight/
+Easy_Deep_Learning/
 ├── core/
 │   ├── data_validator.py
 │   ├── preprocessing.py
@@ -51,7 +51,7 @@ OmniInsight/
 ## 설치
 
 ```bash
-pip install -r OmniInsight/requirements.txt
+pip install -r Easy_Deep_Learning/requirements.txt
 ```
 
 ## CLI 사용법
@@ -59,8 +59,8 @@ pip install -r OmniInsight/requirements.txt
 ### 1) 학습
 
 ```bash
-python OmniInsight/main.py train \
-  --data OmniInsight/data/example_dataset.csv \
+python Easy_Deep_Learning/main.py train \
+  --data Easy_Deep_Learning/data/example_dataset.csv \
   --target-column target \
   --task-type classification \
   --model-type dnn \
@@ -70,8 +70,8 @@ python OmniInsight/main.py train \
 모델 파라미터 커스터마이즈:
 
 ```bash
-python OmniInsight/main.py train \
-  --data OmniInsight/data/example_dataset.csv \
+python Easy_Deep_Learning/main.py train \
+  --data Easy_Deep_Learning/data/example_dataset.csv \
   --target-column target \
   --task-type classification \
   --model-type rf \
@@ -81,8 +81,8 @@ python OmniInsight/main.py train \
 Auto 모델 추천 사용:
 
 ```bash
-python OmniInsight/main.py train \
-  --data OmniInsight/data/example_dataset.csv \
+python Easy_Deep_Learning/main.py train \
+  --data Easy_Deep_Learning/data/example_dataset.csv \
   --target-column target \
   --task-type classification \
   --model-type auto
@@ -91,8 +91,8 @@ python OmniInsight/main.py train \
 AutoML 리더보드:
 
 ```bash
-python OmniInsight/main.py automl \
-  --data OmniInsight/data/example_dataset.csv \
+python Easy_Deep_Learning/main.py automl \
+  --data Easy_Deep_Learning/data/example_dataset.csv \
   --target-column target \
   --task-type classification \
   --max-models 6
@@ -101,7 +101,7 @@ python OmniInsight/main.py automl \
 ### 2) 저장된 모델로 테스트
 
 ```bash
-python OmniInsight/main.py test \
+python Easy_Deep_Learning/main.py test \
   --from-run <run_id> \
   --data /path/to/new_test.csv
 ```
@@ -109,25 +109,25 @@ python OmniInsight/main.py test \
 ### 3) 이미지(CNN) 학습/테스트
 
 ```bash
-python OmniInsight/main.py image-train --dataset MNIST --epochs 5 --lr 0.001 --batch-size 64 --model-arch cnn
-python OmniInsight/main.py image-train --dataset SVHN --epochs 5 --lr 0.001 --batch-size 64 --model-arch resnet18
-python OmniInsight/main.py image-test --from-run <run_id>
+python Easy_Deep_Learning/main.py image-train --dataset MNIST --epochs 5 --lr 0.001 --batch-size 64 --model-arch cnn
+python Easy_Deep_Learning/main.py image-train --dataset SVHN --epochs 5 --lr 0.001 --batch-size 64 --model-arch resnet18
+python Easy_Deep_Learning/main.py image-test --from-run <run_id>
 ```
 
 ### 4) 텍스트(RNN) 학습/테스트
 
 ```bash
-python OmniInsight/main.py text-train --dataset AG_NEWS_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch gru
-python OmniInsight/main.py text-train --dataset SST2_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch lstm --stopwords --ngram 2
-python OmniInsight/main.py text-train --dataset TREC_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch textcnn
-python OmniInsight/main.py text-train --dataset TREC_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch transformer --bpe --bpe-vocab-size 300
-python OmniInsight/main.py text-test --from-run <run_id>
+python Easy_Deep_Learning/main.py text-train --dataset AG_NEWS_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch gru
+python Easy_Deep_Learning/main.py text-train --dataset SST2_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch lstm --stopwords --ngram 2
+python Easy_Deep_Learning/main.py text-train --dataset TREC_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch textcnn
+python Easy_Deep_Learning/main.py text-train --dataset TREC_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch transformer --bpe --bpe-vocab-size 300
+python Easy_Deep_Learning/main.py text-test --from-run <run_id>
 ```
 
 커스텀 텍스트 CSV 사용:
 
 ```bash
-python OmniInsight/main.py text-train \
+python Easy_Deep_Learning/main.py text-train \
   --data /path/to/text.csv \
   --text-column text \
   --label-column label
@@ -157,7 +157,7 @@ python OmniInsight/main.py text-train \
 ## 대시보드
 
 ```bash
-streamlit run OmniInsight/dashboard/app.py
+streamlit run Easy_Deep_Learning/dashboard/app.py
 ```
 
 - **Train Model 탭**: 데이터 업로드 → 모델 선택/파라미터 조정 → 학습

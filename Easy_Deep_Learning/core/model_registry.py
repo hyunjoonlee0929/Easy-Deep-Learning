@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from OmniInsight.core.model_engine import SklearnDNNClassifier, SklearnDNNRegressor
+from Easy_Deep_Learning.core.model_engine import SklearnDNNClassifier, SklearnDNNRegressor
 
 
 @dataclass
@@ -116,7 +116,7 @@ def build_tabular_model(model_type: str, task_type: str, params: dict[str, Any])
 
     if model_type == "xgboost":
         # Use sklearn fallback behavior from model_engine
-        from OmniInsight.core.model_engine import ModelEngine
+        from Easy_Deep_Learning.core.model_engine import ModelEngine
 
         num_classes = int(params.get("num_classes", 0)) or None
         return ModelEngine().build_xgboost(task_type, num_classes=num_classes, random_state=int(params.get("random_state", 42)))

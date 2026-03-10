@@ -20,7 +20,7 @@ os.environ["KMP_USE_SHM"] = "0"
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from OmniInsight.core.logging_utils import configure_logging
+from Easy_Deep_Learning.core.logging_utils import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--target-column", type=str, required=True, help="Target column name")
     train.add_argument("--task-type", choices=["classification", "regression"], required=True)
     train.add_argument("--model-type", choices=["auto", "dnn", "xgboost", "rf", "svm", "knn", "lr", "gbm"], default="dnn")
-    train.add_argument("--config", type=Path, default=Path("OmniInsight/config/model_config.yaml"))
+    train.add_argument("--config", type=Path, default=Path("Easy_Deep_Learning/config/model_config.yaml"))
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--model-params", type=str, default="{}", help="JSON string of model hyperparameters")
 
@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     automl.add_argument("--data", type=Path, required=True, help="Training CSV path")
     automl.add_argument("--target-column", type=str, required=True, help="Target column name")
     automl.add_argument("--task-type", choices=["classification", "regression"], required=True)
-    automl.add_argument("--config", type=Path, default=Path("OmniInsight/config/model_config.yaml"))
+    automl.add_argument("--config", type=Path, default=Path("Easy_Deep_Learning/config/model_config.yaml"))
     automl.add_argument("--seed", type=int, default=42)
     automl.add_argument("--max-models", type=int, default=6)
 
@@ -98,7 +98,7 @@ def main() -> None:
     configure_logging(args.log_level)
 
     if args.command == "train":
-        from OmniInsight.core.workflows import train_and_save
+        from Easy_Deep_Learning.core.workflows import train_and_save
         try:
             model_params = json.loads(args.model_params)
         except json.JSONDecodeError as exc:
@@ -124,7 +124,7 @@ def main() -> None:
         return
 
     if args.command == "test":
-        from OmniInsight.core.workflows import test_from_run
+        from Easy_Deep_Learning.core.workflows import test_from_run
         payload = test_from_run(
             run_id=args.from_run,
             test_data_path=args.data,
@@ -135,7 +135,7 @@ def main() -> None:
         return
 
     if args.command == "image-train":
-        from OmniInsight.core.torch_workflows import train_cnn_image
+        from Easy_Deep_Learning.core.torch_workflows import train_cnn_image
 
         result = train_cnn_image(
             dataset_name=args.dataset,
@@ -157,14 +157,14 @@ def main() -> None:
         return
 
     if args.command == "image-test":
-        from OmniInsight.core.torch_workflows import test_cnn_image
+        from Easy_Deep_Learning.core.torch_workflows import test_cnn_image
 
         payload = test_cnn_image(args.from_run)
         print(json.dumps(payload, indent=2))
         return
 
     if args.command == "text-train":
-        from OmniInsight.core.torch_workflows import train_rnn_text
+        from Easy_Deep_Learning.core.torch_workflows import train_rnn_text
 
         result = train_rnn_text(
             dataset_name=args.dataset,
@@ -195,14 +195,14 @@ def main() -> None:
         return
 
     if args.command == "text-test":
-        from OmniInsight.core.torch_workflows import test_rnn_text
+        from Easy_Deep_Learning.core.torch_workflows import test_rnn_text
 
         payload = test_rnn_text(args.from_run, data_path=args.data)
         print(json.dumps(payload, indent=2))
         return
 
     if args.command == "automl":
-        from OmniInsight.core.workflows import run_leaderboard
+        from Easy_Deep_Learning.core.workflows import run_leaderboard
 
         payload = run_leaderboard(
             data_path=args.data,

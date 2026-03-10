@@ -14,7 +14,7 @@ from io import BytesIO
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
-from OmniInsight.core.experiment_tracker import ExperimentTracker
+from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -694,7 +694,7 @@ def train_rnn_text(
     if data_path is None:
         if dataset_name != "AG_NEWS_SAMPLE":
             raise ValueError("Provide --data for custom text dataset or use AG_NEWS_SAMPLE.")
-        data_path = Path("OmniInsight/data/text_sample.csv")
+        data_path = Path("Easy_Deep_Learning/data/text_sample.csv")
 
     texts, labels = _load_text_dataset(data_path, text_column, label_column)
     bpe_merges = train_bpe(texts, bpe_vocab_size) if bpe else None

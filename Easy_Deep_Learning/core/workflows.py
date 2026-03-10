@@ -16,14 +16,14 @@ import yaml
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import LabelEncoder
 
-from OmniInsight.core.automl import leaderboard_candidates, recommend_model, score_metrics
-from OmniInsight.core.data_validator import DataValidator
-from OmniInsight.core.experiment_tracker import ExperimentTracker
-from OmniInsight.core.model_registry import build_tabular_model
-from OmniInsight.core.preprocessing import AutoPreprocessor
-from OmniInsight.core.model_engine import ModelResult
-from OmniInsight.core.reporting import generate_html_report
-from OmniInsight.core.trainer import Trainer, TrainingConfig
+from Easy_Deep_Learning.core.automl import leaderboard_candidates, recommend_model, score_metrics
+from Easy_Deep_Learning.core.data_validator import DataValidator
+from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
+from Easy_Deep_Learning.core.model_registry import build_tabular_model
+from Easy_Deep_Learning.core.preprocessing import AutoPreprocessor
+from Easy_Deep_Learning.core.model_engine import ModelResult
+from Easy_Deep_Learning.core.reporting import generate_html_report
+from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")

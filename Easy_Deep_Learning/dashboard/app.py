@@ -16,9 +16,9 @@ import streamlit as st
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from OmniInsight.core.logging_utils import configure_logging
-from OmniInsight.core.automl import recommend_model
-from OmniInsight.core.workflows import run_leaderboard, test_from_run, train_and_save
+from Easy_Deep_Learning.core.logging_utils import configure_logging
+from Easy_Deep_Learning.core.automl import recommend_model
+from Easy_Deep_Learning.core.workflows import run_leaderboard, test_from_run, train_and_save
 
 configure_logging("INFO")
 logger = logging.getLogger(__name__)
@@ -362,7 +362,7 @@ with train_tab:
                 with st.spinner("학습 및 아티팩트 저장 중..."):
                     result = train_and_save(
                         data_path=tmp_train_path,
-                        config_path=Path("OmniInsight/config/model_config.yaml"),
+                    config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
                         target_column=target_col,
                         task_type=task_type,
                         model_type=model_type,
@@ -386,7 +386,7 @@ with train_tab:
                 with st.spinner("여러 모델을 학습하고 리더보드를 생성 중..."):
                     lb_result = run_leaderboard(
                         data_path=tmp_train_path,
-                        config_path=Path("OmniInsight/config/model_config.yaml"),
+                    config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
                         target_column=target_col,
                         task_type=task_type,
                         seed=int(seed),
@@ -429,7 +429,7 @@ with train_tab:
                         with st.spinner("Best run 설정으로 재학습 중..."):
                             result = train_and_save(
                                 data_path=tmp_train_path,
-                                config_path=Path("OmniInsight/config/model_config.yaml"),
+                                config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
                                 target_column=snapshot["input"]["target_column"],
                                 task_type=snapshot["input"]["task_type"],
                                 model_type=best_run["model_type"],
@@ -561,7 +561,7 @@ with image_tab:
 
         with st.expander("Step 3: Train & Results", expanded=True):
             if st.button("Train CNN", type="primary"):
-                from OmniInsight.core.torch_workflows import train_cnn_image
+                from Easy_Deep_Learning.core.torch_workflows import train_cnn_image
 
                 with st.spinner("Training CNN..."):
                     result = train_cnn_image(
@@ -615,7 +615,7 @@ with image_tab:
             cnn_runs = [rid for rid in run_ids if rid.endswith("_cnn")]
             selected_cnn = st.selectbox("CNN run_id", options=cnn_runs, key="cnn_run")
             if st.button("Test CNN", type="secondary") and selected_cnn:
-                from OmniInsight.core.torch_workflows import test_cnn_image
+                from Easy_Deep_Learning.core.torch_workflows import test_cnn_image
 
                 with st.spinner("Testing CNN..."):
                     result = test_cnn_image(selected_cnn)
@@ -627,7 +627,7 @@ with image_tab:
             show_cam = st.checkbox("Show Grad-CAM", value=False, key="img_cam")
             if uploaded_imgs and pred_run:
                 if show_cam:
-                    from OmniInsight.core.torch_workflows import predict_cnn_images_with_cam
+                    from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images_with_cam
                     import matplotlib.cm as cm
 
                     img_bytes = [u.getvalue() for u in uploaded_imgs]
@@ -638,7 +638,7 @@ with image_tab:
                         st.image(uploaded_imgs[i], caption=f"{pred['label']} ({pred['prob']:.3f})")
                         st.image(heat, caption="Grad-CAM", width=180)
                 else:
-                    from OmniInsight.core.torch_workflows import predict_cnn_images
+                    from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images
 
                     img_bytes = [u.getvalue() for u in uploaded_imgs]
                     with st.spinner("Running predictions..."):
@@ -667,11 +667,11 @@ with text_tab:
             uploaded_text = st.file_uploader("Upload text CSV", type=["csv"], key="text_upload")
             text_df = pd.read_csv(uploaded_text) if uploaded_text else None
         elif dataset_choice == "SST2_SAMPLE":
-            text_df = pd.read_csv(Path("OmniInsight/data/text_sample_sst2.csv"))
+            text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample_sst2.csv"))
         elif dataset_choice == "TREC_SAMPLE":
-            text_df = pd.read_csv(Path("OmniInsight/data/text_sample_trec.csv"))
+            text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample_trec.csv"))
         else:
-            text_df = pd.read_csv(Path("OmniInsight/data/text_sample.csv"))
+            text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample.csv"))
 
         text_col = st.text_input("Text column", value="text", key="txt_col")
         label_col = st.text_input("Label column", value="label", key="lbl_col")
@@ -702,7 +702,7 @@ with text_tab:
 
     with st.expander("Step 3: Train & Test", expanded=True):
         if st.button("Train RNN", type="primary"):
-            from OmniInsight.core.torch_workflows import train_rnn_text
+            from Easy_Deep_Learning.core.torch_workflows import train_rnn_text
 
             if text_df is None:
                 st.error("텍스트 CSV를 선택하세요.")
@@ -739,7 +739,7 @@ with text_tab:
         rnn_runs = [rid for rid in run_ids if rid.endswith("_rnn")]
         selected_rnn = st.selectbox("RNN run_id", options=rnn_runs, key="rnn_run")
         if st.button("Test RNN", type="secondary") and selected_rnn:
-            from OmniInsight.core.torch_workflows import test_rnn_text
+            from Easy_Deep_Learning.core.torch_workflows import test_rnn_text
 
             with st.spinner("Testing RNN..."):
                 result = test_rnn_text(selected_rnn, data_path=None)
