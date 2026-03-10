@@ -1,1 +1,0 @@
-"""OmniInsight package."""
