@@ -1,11 +1,5 @@
 # Easy Deep Learning
 
-**GitHub Description (suggested)**
-Lightweight end-to-end ML toolkit for tabular, image, and text tasks with auto-preprocessing, AutoML, and Streamlit UI.
-
-**GitHub Topics (suggested)**
-`machine-learning`, `deep-learning`, `streamlit`, `pytorch`, `scikit-learn`, `xgboost`, `automl`, `tabular-data`, `image-classification`, `text-classification`, `mlops`, `python`
-
 ---
 
 Easy Deep Learning은 사용자가 CSV 데이터로 분류/회귀 문제를 빠르게 학습하고,
@@ -60,6 +54,13 @@ Easy_Deep_Learning/
 
 ```bash
 pip install -r Easy_Deep_Learning/requirements.txt
+```
+
+## Quick Start
+
+```bash
+pip install -r Easy_Deep_Learning/requirements.txt
+streamlit run Easy_Deep_Learning/dashboard/app.py
 ```
 
 ## CLI 사용법
