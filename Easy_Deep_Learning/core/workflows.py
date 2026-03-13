@@ -26,6 +26,7 @@ from Easy_Deep_Learning.core.reporting import generate_ai_report, generate_html_
 from Easy_Deep_Learning.core.explainability import generate_explainability_artifacts
 from Easy_Deep_Learning.core.error_analysis import generate_error_analysis
 from Easy_Deep_Learning.core.recommendations import generate_model_recommendations
+from Easy_Deep_Learning.core.tuning import run_auto_tuning
 from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -265,6 +266,7 @@ def train_and_save(
             y_test=processed.y_test,
             task_type=task_type,
             label_encoder=model_result.label_encoder,
+            raw_df=processed.X_test_raw,
         )
     except Exception:
         pass
@@ -273,6 +275,43 @@ def train_and_save(
     generate_model_recommendations(run_path)
     generate_html_report(run_path)
     return RunResult(run_id=run_id, run_path=run_path, metrics=model_result.metrics)
+
+
+def auto_tune_and_train(
+    data_path: Path,
+    config_path: Path,
+    target_column: str,
+    task_type: str,
+    model_type: str,
+    seed: int,
+    max_trials: int = 10,
+) -> RunResult:
+    """Run lightweight tuning and train the best model."""
+    df = pd.read_csv(data_path)
+    tune_result = run_auto_tuning(
+        df=df,
+        target_column=target_column,
+        task_type=task_type,
+        model_type=model_type,
+        seed=seed,
+        max_trials=max_trials,
+    )
+
+    result = train_and_save(
+        data_path=data_path,
+        config_path=config_path,
+        target_column=target_column,
+        task_type=task_type,
+        model_type=model_type,
+        seed=seed,
+        model_params=tune_result.best_params,
+    )
+
+    tracker = ExperimentTracker(base_dir=Path("runs"))
+    tracker.save_json(result.run_path / "tuning_results.json", tune_result.trials)
+    tracker.save_json(result.run_path / "best_params.json", tune_result.best_params)
+    tracker.save_json(result.run_path / "best_metrics.json", tune_result.best_metrics)
+    return result
 
 
 def run_leaderboard(
@@ -550,6 +589,7 @@ def test_from_run(
                 y_test=y_true,
                 task_type=task_type,
                 label_encoder=label_encoder,
+                raw_df=X_test_df,
             )
         except Exception:
             pass

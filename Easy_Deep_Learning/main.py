@@ -88,6 +88,15 @@ def build_parser() -> argparse.ArgumentParser:
     automl.add_argument("--seed", type=int, default=42)
     automl.add_argument("--max-models", type=int, default=6)
 
+    tune = subparsers.add_parser("tune", help="Auto tune hyperparameters for a model")
+    tune.add_argument("--data", type=Path, required=True, help="Training CSV path")
+    tune.add_argument("--target-column", type=str, required=True, help="Target column name")
+    tune.add_argument("--task-type", choices=["classification", "regression"], required=True)
+    tune.add_argument("--model-type", choices=["xgboost", "rf", "svm", "knn", "lr", "gbm"], required=True)
+    tune.add_argument("--config", type=Path, default=Path("Easy_Deep_Learning/config/model_config.yaml"))
+    tune.add_argument("--seed", type=int, default=42)
+    tune.add_argument("--max-trials", type=int, default=10)
+
     agent = subparsers.add_parser("agent", help="Run tool-using agent on a dataset")
     agent.add_argument("--data", type=Path, required=True, help="CSV path")
     agent.add_argument("--target-column", type=str, required=True)
@@ -224,6 +233,28 @@ def main() -> None:
             seed=args.seed,
             max_models=args.max_models,
         )
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "tune":
+        from Easy_Deep_Learning.core.workflows import auto_tune_and_train
+
+        result = auto_tune_and_train(
+            data_path=args.data,
+            config_path=args.config,
+            target_column=args.target_column,
+            task_type=args.task_type,
+            model_type=args.model_type,
+            seed=args.seed,
+            max_trials=args.max_trials,
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "tune",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
         print(json.dumps(payload, indent=2))
         return
 

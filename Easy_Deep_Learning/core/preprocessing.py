@@ -21,6 +21,8 @@ class ProcessedData:
     X_test: object
     y_train: pd.Series
     y_test: pd.Series
+    X_train_raw: pd.DataFrame
+    X_test_raw: pd.DataFrame
     preprocessor: ColumnTransformer
     feature_names: list[str]
 
@@ -96,6 +98,8 @@ class AutoPreprocessor:
             X_test=X_test_t,
             y_train=y_train,
             y_test=y_test,
+            X_train_raw=X_train.copy(),
+            X_test_raw=X_test.copy(),
             preprocessor=preprocessor,
             feature_names=feature_names,
         )

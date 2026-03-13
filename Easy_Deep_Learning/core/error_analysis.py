@@ -14,6 +14,17 @@ from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
 def _to_numpy(X: Any) -> np.ndarray:
     return X.toarray() if hasattr(X, "toarray") else np.asarray(X)
 
+def _normalize_value(val: Any) -> Any:
+    if isinstance(val, (np.integer, np.floating)):
+        return val.item()
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    return val
+
+
+def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: _normalize_value(v) for k, v in row.items()}
+
 
 def generate_error_analysis(
     run_path: Path,
@@ -22,6 +33,7 @@ def generate_error_analysis(
     y_test: Any,
     task_type: str,
     label_encoder: Any | None = None,
+    raw_df: Any | None = None,
     top_k: int = 10,
 ) -> dict[str, Any]:
     """Generate error analysis artifacts and JSON summary."""
@@ -59,21 +71,35 @@ def generate_error_analysis(
                 order = np.argsort(-conf)
                 top_idx = errors_idx[order][:top_k]
                 for idx in top_idx:
+                    row = None
+                    if raw_df is not None:
+                        try:
+                            row = _normalize_row(raw_df.iloc[int(idx)].to_dict())
+                        except Exception:
+                            row = None
                     error_rows.append(
                         {
                             "index": int(idx),
                             "y_true": str(y_true_labels[idx]),
                             "y_pred": str(y_pred_labels[idx]),
                             "confidence": float(np.max(proba[idx])),
+                            "row": row,
                         }
                     )
             else:
                 for idx in errors_idx[:top_k]:
+                    row = None
+                    if raw_df is not None:
+                        try:
+                            row = _normalize_row(raw_df.iloc[int(idx)].to_dict())
+                        except Exception:
+                            row = None
                     error_rows.append(
                         {
                             "index": int(idx),
                             "y_true": str(y_true_labels[idx]),
                             "y_pred": str(y_pred_labels[idx]),
+                            "row": row,
                         }
                     )
 
@@ -99,6 +125,7 @@ def generate_error_analysis(
                 "y_pred": float(y_pred[i]),
                 "error": float(residuals[i]),
                 "abs_error": float(abs_res[i]),
+                "row": _normalize_row(raw_df.iloc[int(i)].to_dict()) if raw_df is not None else None,
             }
             for i in top_idx
         ]

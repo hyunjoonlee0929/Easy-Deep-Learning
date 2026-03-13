@@ -126,6 +126,7 @@ def generate_html_report(run_path: Path) -> Path:
     has_shap = (run_path / "shap_summary.png").exists()
     has_shap_inter = (run_path / "shap_interaction.png").exists()
     has_residuals = (run_path / "residuals.png").exists()
+    interaction_pdp = list(run_path.glob("pdp_interaction_*.png"))
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -192,6 +193,7 @@ def generate_html_report(run_path: Path) -> Path:
   {"<div class='section'><h2>SHAP Summary</h2><img src='shap_summary.png' style='max-width: 640px; width: 100%;'/></div>" if has_shap else ""}
   {"<div class='section'><h2>SHAP Interaction</h2><img src='shap_interaction.png' style='max-width: 640px; width: 100%;'/></div>" if has_shap_inter else ""}
   {"<div class='section'><h2>Residual Plot</h2><img src='residuals.png' style='max-width: 640px; width: 100%;'/></div>" if has_residuals else ""}
+  {"<div class='section'><h2>Interaction PDP</h2>" + "".join([f\"<img src='{p.name}' style='max-width: 640px; width: 100%;'/>\" for p in interaction_pdp]) + "</div>" if interaction_pdp else ""}
 </body>
 </html>
 """

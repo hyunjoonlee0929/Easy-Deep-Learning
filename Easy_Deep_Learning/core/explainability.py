@@ -95,6 +95,45 @@ def _plot_pdp_ice(
     return paths
 
 
+def _plot_interaction_pdp(
+    model: Any,
+    X: np.ndarray,
+    feature_names: list[str],
+    top_pairs: list[list[str]],
+    run_path: Path,
+) -> list[str]:
+    paths: list[str] = []
+    try:
+        import matplotlib.pyplot as plt
+        from sklearn.inspection import PartialDependenceDisplay
+    except Exception:
+        return paths
+
+    for pair in top_pairs:
+        if len(pair) != 2:
+            continue
+        f1, f2 = pair
+        if f1 not in feature_names or f2 not in feature_names:
+            continue
+        idx1 = feature_names.index(f1)
+        idx2 = feature_names.index(f2)
+        fig, ax = plt.subplots(figsize=(5, 4))
+        PartialDependenceDisplay.from_estimator(
+            model,
+            X,
+            [(idx1, idx2)],
+            feature_names=feature_names,
+            ax=ax,
+        )
+        fig.tight_layout()
+        path = run_path / f"pdp_interaction_{_sanitize(f1)}__{_sanitize(f2)}.png"
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        paths.append(str(path.name))
+
+    return paths
+
+
 def _try_shap(
     model: Any,
     X: np.ndarray,
@@ -223,11 +262,17 @@ def generate_explainability_artifacts(
     tracker.save_json(run_path / "shap_summary.json", shap_result)
     tracker.save_json(run_path / "shap_interactions.json", shap_interactions)
 
+    interaction_pdp = []
+    if shap_interactions.get("enabled"):
+        pairs = [entry["pair"] for entry in shap_interactions.get("top_interactions", [])[:3]]
+        interaction_pdp = _plot_interaction_pdp(model, X, feature_names, pairs, run_path)
+
     payload = {
         "top_features": top_features,
         "pdp_ice": pdp_ice_paths,
         "shap": shap_result,
         "shap_interactions": shap_interactions,
+        "interaction_pdp": interaction_pdp,
     }
     tracker.save_json(run_path / "explainability.json", payload)
     return payload

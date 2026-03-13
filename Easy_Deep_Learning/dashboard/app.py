@@ -18,7 +18,7 @@ if __package__ is None or __package__ == "":
 
 from Easy_Deep_Learning.core.logging_utils import configure_logging
 from Easy_Deep_Learning.core.automl import recommend_model
-from Easy_Deep_Learning.core.workflows import run_leaderboard, test_from_run, train_and_save
+from Easy_Deep_Learning.core.workflows import run_leaderboard, test_from_run, train_and_save, auto_tune_and_train
 
 configure_logging("INFO")
 logger = logging.getLogger(__name__)
@@ -261,10 +261,31 @@ def show_run_artifacts(run_path: Path) -> None:
         st.subheader("Recommendations")
         st.json(json.loads(rec_path.read_text(encoding="utf-8")))
 
+    best_params_path = run_path / "best_params.json"
+    if best_params_path.exists():
+        st.subheader("Best Params (Tuning)")
+        st.json(json.loads(best_params_path.read_text(encoding="utf-8")))
+
+    tuning_path = run_path / "tuning_results.json"
+    if tuning_path.exists():
+        st.subheader("Tuning Results")
+        try:
+            tuning = json.loads(tuning_path.read_text(encoding="utf-8"))
+            st.dataframe(pd.DataFrame(tuning), use_container_width=True)
+        except Exception:
+            st.json(json.loads(tuning_path.read_text(encoding="utf-8")))
+
     err_path = run_path / "error_analysis.json"
     if err_path.exists():
         st.subheader("Error Analysis")
-        st.json(json.loads(err_path.read_text(encoding="utf-8")))
+        err_payload = json.loads(err_path.read_text(encoding="utf-8"))
+        st.json(err_payload)
+        top_errors = err_payload.get("top_errors")
+        if top_errors:
+            try:
+                st.dataframe(pd.DataFrame(top_errors), use_container_width=True)
+            except Exception:
+                pass
 
     cm_path = run_path / "confusion_matrix.png"
     if cm_path.exists():
@@ -295,6 +316,12 @@ def show_run_artifacts(run_path: Path) -> None:
     if shap_inter_path.exists():
         st.subheader("SHAP Interaction (saved)")
         st.image(str(shap_inter_path))
+
+    interaction_pdp = sorted(run_path.glob("pdp_interaction_*.png"))
+    if interaction_pdp:
+        st.subheader("Interaction PDP (saved)")
+        for path in interaction_pdp:
+            st.image(str(path))
 
     pdp_paths = sorted(run_path.glob("pdp_*.png"))
     if pdp_paths:
@@ -493,6 +520,32 @@ with tabular_tab:
                             )
                         st.success(f"재학습 완료: run_id={result.run_id}")
                         st.code(str(result.run_path.resolve()))
+
+            st.subheader("Auto Tuning")
+            tune_model = st.selectbox(
+                "Tuning model type",
+                options=["rf", "gbm", "xgboost", "svm", "knn", "lr"],
+                index=0,
+                key="tab_tune_model",
+            )
+            max_trials = st.number_input("Max trials", min_value=3, max_value=30, value=10, step=1, key="tab_tune_trials")
+            if st.button("Auto Tuning 실행", type="secondary", key="tab_tune_run"):
+                tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                train_df.to_csv(tmp_train_path, index=False)
+
+                with st.spinner("하이퍼파라미터 튜닝 + 학습 중..."):
+                    result = auto_tune_and_train(
+                        data_path=tmp_train_path,
+                        config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
+                        target_column=target_col,
+                        task_type=task_type,
+                        model_type=tune_model,
+                        seed=int(seed),
+                        max_trials=int(max_trials),
+                    )
+                st.success(f"튜닝 완료: run_id={result.run_id}")
+                st.code(str(result.run_path.resolve()))
+                show_run_artifacts(result.run_path)
 
     st.subheader("Test Saved Model")
     runs_dir = Path("runs")
