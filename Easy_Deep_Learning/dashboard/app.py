@@ -40,6 +40,15 @@ if st.sidebar.button("Clear Quick Preset"):
         if key in st.session_state:
             del st.session_state[key]
 
+st.sidebar.header("OpenAI API Key")
+api_key_input = st.sidebar.text_input("API Key", type="password", value=st.session_state.get("openai_api_key", ""))
+if api_key_input:
+    st.session_state["openai_api_key"] = api_key_input
+    os.environ["OPENAI_API_KEY"] = api_key_input
+    st.sidebar.success("API key set for this session.")
+else:
+    st.sidebar.info("키를 입력하면 챗봇/요약 기능에서 OpenAI 사용 가능")
+
 st.sidebar.header("Recent Runs")
 runs_dir = Path("runs")
 run_ids_sidebar = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
@@ -297,9 +306,8 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
-    "Train Model",
-    "Test Saved Model",
+tabular_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
+    "Tabular",
     "Image Models",
     "Text Models",
     "Agent",
@@ -309,7 +317,7 @@ train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, summary_ta
     "Chatbot",
 ])
 
-with train_tab:
+with tabular_tab:
     st.subheader("Train")
     quick_defaults = quick_preset_state(quick_action)
     if quick_action in ["Quick Classification", "Quick Regression"]:
@@ -444,7 +452,6 @@ with train_tab:
                         st.success(f"재학습 완료: run_id={result.run_id}")
                         st.code(str(result.run_path.resolve()))
 
-with test_tab:
     st.subheader("Test Saved Model")
     runs_dir = Path("runs")
     run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
