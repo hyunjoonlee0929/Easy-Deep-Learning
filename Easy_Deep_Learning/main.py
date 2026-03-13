@@ -88,6 +88,18 @@ def build_parser() -> argparse.ArgumentParser:
     automl.add_argument("--seed", type=int, default=42)
     automl.add_argument("--max-models", type=int, default=6)
 
+    agent = subparsers.add_parser("agent", help="Run tool-using agent on a dataset")
+    agent.add_argument("--data", type=Path, required=True, help="CSV path")
+    agent.add_argument("--target-column", type=str, required=True)
+    agent.add_argument("--task-type", choices=["classification", "regression"], required=True)
+
+    rag = subparsers.add_parser("rag", help="Run lightweight RAG on a text corpus")
+    rag.add_argument("--query", type=str, required=True)
+    rag.add_argument("--docs", type=Path, required=True, help="Text file containing docs (one per line)")
+    rag.add_argument("--top-k", type=int, default=3)
+    rag.add_argument("--chunk-size", type=int, default=400)
+    rag.add_argument("--overlap", type=int, default=80)
+
     return parser
 
 
@@ -213,6 +225,45 @@ def main() -> None:
             max_models=args.max_models,
         )
         print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "agent":
+        from Easy_Deep_Learning.agents.tool_agent import AgentInput, ToolUsingAgent, make_default_tools
+
+        agent = ToolUsingAgent()
+        result = agent.run(
+            AgentInput(
+                dataset_path=args.data,
+                target_column=args.target_column,
+                task_type=args.task_type,
+            ),
+            tools=make_default_tools(),
+        )
+        print(json.dumps({
+            "tool_calls": [call.__dict__ for call in result.tool_calls],
+            "tool_results": [res.__dict__ for res in result.tool_results],
+            "summary": result.final_summary,
+        }, indent=2))
+        return
+
+    if args.command == "rag":
+        from Easy_Deep_Learning.core.rag import run_rag
+
+        docs = [line.strip() for line in args.docs.read_text(encoding="utf-8").splitlines() if line.strip()]
+        result = run_rag(
+            query=args.query,
+            docs=docs,
+            top_k=args.top_k,
+            chunk_size=args.chunk_size,
+            overlap=args.overlap,
+        )
+        print(json.dumps({
+            "query": result.query,
+            "answer": result.answer,
+            "contexts": result.contexts,
+            "scores": result.scores,
+            "eval": result.eval,
+        }, indent=2))
         return
 
     parser.error("Unknown command")

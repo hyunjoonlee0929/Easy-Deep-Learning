@@ -297,11 +297,13 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-train_tab, test_tab, image_tab, text_tab = st.tabs([
+train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab = st.tabs([
     "Train Model",
     "Test Saved Model",
     "Image Models",
     "Text Models",
+    "Agent",
+    "RAG",
 ])
 
 with train_tab:
@@ -744,3 +746,81 @@ with text_tab:
             with st.spinner("Testing RNN..."):
                 result = test_rnn_text(selected_rnn, data_path=None)
             st.metric("test_accuracy", f"{result['test_accuracy']:.4f}")
+
+with agent_tab:
+    st.subheader("Tool-Using Agent")
+    agent_df, agent_target = pick_data_source("agent")
+
+    if agent_df is not None:
+        if agent_target and agent_target in agent_df.columns:
+            agent_default_target = agent_df.columns.get_loc(agent_target)
+        else:
+            agent_default_target = len(agent_df.columns) - 1
+
+        agent_target_col = st.selectbox(
+            "Target column",
+            options=agent_df.columns.tolist(),
+            index=agent_default_target,
+        )
+        agent_task_type = st.selectbox("Task type", options=["classification", "regression"], index=0, key="agent_task")
+
+        show_dataset_summary(agent_df, agent_target_col)
+
+        if st.button("Run Agent", type="primary"):
+            from Easy_Deep_Learning.agents.tool_agent import AgentInput, ToolUsingAgent, make_default_tools
+
+            tmp_agent_path = Path("/tmp/easy_dl_agent.csv")
+            agent_df.to_csv(tmp_agent_path, index=False)
+
+            with st.spinner("Running tool-using agent..."):
+                agent = ToolUsingAgent()
+                result = agent.run(
+                    AgentInput(
+                        dataset_path=tmp_agent_path,
+                        target_column=agent_target_col,
+                        task_type=agent_task_type,
+                    ),
+                    tools=make_default_tools(),
+                )
+
+            st.subheader("Tool Calls")
+            st.json([call.__dict__ for call in result.tool_calls])
+
+            st.subheader("Tool Results")
+            st.json([res.__dict__ for res in result.tool_results])
+
+            st.subheader("Summary")
+            st.write(result.final_summary)
+
+with rag_tab:
+    st.subheader("RAG + Auto Evaluation")
+    docs_input = st.text_area("Documents (one per line)", height=180, key="rag_docs")
+    query_input = st.text_input("Query", key="rag_query")
+    top_k = st.number_input("Top-K", min_value=1, max_value=10, value=3, step=1, key="rag_topk")
+    chunk_size = st.number_input("Chunk size", min_value=100, max_value=2000, value=400, step=50, key="rag_chunk")
+    overlap = st.number_input("Overlap", min_value=0, max_value=500, value=80, step=10, key="rag_overlap")
+
+    if st.button("Run RAG", type="primary"):
+        from Easy_Deep_Learning.core.rag import run_rag
+
+        docs = [line.strip() for line in docs_input.splitlines() if line.strip()]
+        if not docs:
+            st.error("문서가 비어 있습니다.")
+        elif not query_input.strip():
+            st.error("질문을 입력하세요.")
+        else:
+            result = run_rag(
+                query=query_input,
+                docs=docs,
+                top_k=int(top_k),
+                chunk_size=int(chunk_size),
+                overlap=int(overlap),
+            )
+            st.subheader("Answer")
+            st.write(result.answer)
+            st.subheader("Contexts")
+            for i, ctx in enumerate(result.contexts):
+                st.write(f"[{i+1}] score={result.scores[i]:.3f}")
+                st.write(ctx)
+            st.subheader("Auto Evaluation")
+            st.json(result.eval)
