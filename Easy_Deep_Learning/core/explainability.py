@@ -145,6 +145,55 @@ def _try_shap(
         return {"enabled": False, "reason": str(exc)}
 
 
+def _try_shap_interactions(
+    model: Any,
+    X: np.ndarray,
+    feature_names: list[str],
+    run_path: Path,
+) -> dict[str, Any]:
+    try:
+        import shap
+        import matplotlib.pyplot as plt
+    except Exception:
+        return {"enabled": False, "reason": "shap not installed"}
+
+    try:
+        if not (hasattr(model, "get_booster") or "xgboost" in model.__class__.__name__.lower()):
+            return {"enabled": False, "reason": "interaction requires tree model"}
+
+        explainer = shap.TreeExplainer(model)
+        inter = explainer.shap_interaction_values(X)
+
+        if isinstance(inter, list):
+            inter_vals = np.mean([np.abs(v) for v in inter], axis=0)
+        else:
+            inter_vals = np.abs(inter)
+
+        mean_inter = np.mean(inter_vals, axis=0)
+        n = mean_inter.shape[0]
+        pairs = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                pairs.append(((feature_names[i], feature_names[j]), float(mean_inter[i, j])))
+        pairs.sort(key=lambda x: x[1], reverse=True)
+        top_pairs = [{"pair": list(p), "importance": v} for p, v in pairs[:10]]
+
+        fig = plt.figure(figsize=(7, 5))
+        shap.summary_plot(inter, X, feature_names=feature_names, show=False)
+        fig.tight_layout()
+        path = run_path / "shap_interaction.png"
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+
+        return {
+            "enabled": True,
+            "summary_plot": str(path.name),
+            "top_interactions": top_pairs,
+        }
+    except Exception as exc:
+        return {"enabled": False, "reason": str(exc)}
+
+
 def generate_explainability_artifacts(
     run_path: Path,
     model: Any,
@@ -170,12 +219,15 @@ def generate_explainability_artifacts(
     pdp_ice_paths = _plot_pdp_ice(model, X, feature_names, top_features, run_path)
 
     shap_result = _try_shap(model, X, feature_names, run_path)
+    shap_interactions = _try_shap_interactions(model, X, feature_names, run_path)
     tracker.save_json(run_path / "shap_summary.json", shap_result)
+    tracker.save_json(run_path / "shap_interactions.json", shap_interactions)
 
     payload = {
         "top_features": top_features,
         "pdp_ice": pdp_ice_paths,
         "shap": shap_result,
+        "shap_interactions": shap_interactions,
     }
     tracker.save_json(run_path / "explainability.json", payload)
     return payload

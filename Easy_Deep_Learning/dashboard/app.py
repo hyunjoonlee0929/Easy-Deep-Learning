@@ -256,6 +256,16 @@ def show_run_artifacts(run_path: Path) -> None:
         st.subheader("AI Report")
         st.json(json.loads(ai_report_path.read_text(encoding="utf-8")))
 
+    rec_path = run_path / "recommendations.json"
+    if rec_path.exists():
+        st.subheader("Recommendations")
+        st.json(json.loads(rec_path.read_text(encoding="utf-8")))
+
+    err_path = run_path / "error_analysis.json"
+    if err_path.exists():
+        st.subheader("Error Analysis")
+        st.json(json.loads(err_path.read_text(encoding="utf-8")))
+
     cm_path = run_path / "confusion_matrix.png"
     if cm_path.exists():
         st.subheader("Confusion Matrix (saved)")
@@ -271,10 +281,20 @@ def show_run_artifacts(run_path: Path) -> None:
         st.subheader("Prediction Scatter (saved)")
         st.image(str(scatter_path))
 
+    residual_path = run_path / "residuals.png"
+    if residual_path.exists():
+        st.subheader("Residual Plot (saved)")
+        st.image(str(residual_path))
+
     shap_path = run_path / "shap_summary.png"
     if shap_path.exists():
         st.subheader("SHAP Summary (saved)")
         st.image(str(shap_path))
+
+    shap_inter_path = run_path / "shap_interaction.png"
+    if shap_inter_path.exists():
+        st.subheader("SHAP Interaction (saved)")
+        st.image(str(shap_inter_path))
 
     pdp_paths = sorted(run_path.glob("pdp_*.png"))
     if pdp_paths:

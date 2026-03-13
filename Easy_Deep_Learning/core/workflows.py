@@ -24,6 +24,8 @@ from Easy_Deep_Learning.core.preprocessing import AutoPreprocessor
 from Easy_Deep_Learning.core.model_engine import ModelResult
 from Easy_Deep_Learning.core.reporting import generate_ai_report, generate_html_report
 from Easy_Deep_Learning.core.explainability import generate_explainability_artifacts
+from Easy_Deep_Learning.core.error_analysis import generate_error_analysis
+from Easy_Deep_Learning.core.recommendations import generate_model_recommendations
 from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -255,8 +257,20 @@ def train_and_save(
         )
     except Exception:
         pass
+    try:
+        generate_error_analysis(
+            run_path=run_path,
+            model=model_result.model,
+            X_test=processed.X_test,
+            y_test=processed.y_test,
+            task_type=task_type,
+            label_encoder=model_result.label_encoder,
+        )
+    except Exception:
+        pass
 
     generate_ai_report(run_path)
+    generate_model_recommendations(run_path)
     generate_html_report(run_path)
     return RunResult(run_id=run_id, run_path=run_path, metrics=model_result.metrics)
 
@@ -527,7 +541,20 @@ def test_from_run(
             )
         except Exception:
             pass
+        try:
+            label_encoder = joblib.load(label_encoder_path) if label_encoder_path.exists() else None
+            generate_error_analysis(
+                run_path=run_path,
+                model=model,
+                X_test=X_test,
+                y_test=y_true,
+                task_type=task_type,
+                label_encoder=label_encoder,
+            )
+        except Exception:
+            pass
         generate_ai_report(run_path)
+        generate_model_recommendations(run_path)
         generate_html_report(run_path)
 
     return payload

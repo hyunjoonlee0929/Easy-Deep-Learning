@@ -118,10 +118,14 @@ def generate_html_report(run_path: Path) -> Path:
     validation = _read_json(run_path / "validation_report.json") or {}
     predictions = _read_json(run_path / "predictions_preview.json") or {}
     ai_report = _read_json(run_path / "ai_report.json") or {}
+    recommendations = _read_json(run_path / "recommendations.json") or {}
+    error_analysis = _read_json(run_path / "error_analysis.json") or {}
     has_cm = (run_path / "confusion_matrix.png").exists()
     has_roc = (run_path / "roc_curve.png").exists()
     has_scatter = (run_path / "prediction_scatter.png").exists()
     has_shap = (run_path / "shap_summary.png").exists()
+    has_shap_inter = (run_path / "shap_interaction.png").exists()
+    has_residuals = (run_path / "residuals.png").exists()
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -172,10 +176,22 @@ def generate_html_report(run_path: Path) -> Path:
     <pre>{json.dumps(ai_report, indent=2, ensure_ascii=False)}</pre>
   </div>
 
+  <div class="section">
+    <h2>Error Analysis</h2>
+    <pre>{json.dumps(error_analysis, indent=2, ensure_ascii=False)}</pre>
+  </div>
+
+  <div class="section">
+    <h2>Recommendations</h2>
+    <pre>{json.dumps(recommendations, indent=2, ensure_ascii=False)}</pre>
+  </div>
+
   {"<div class='section'><h2>Confusion Matrix</h2><img src='confusion_matrix.png' style='max-width: 640px; width: 100%;'/></div>" if has_cm else ""}
   {"<div class='section'><h2>ROC Curve</h2><img src='roc_curve.png' style='max-width: 640px; width: 100%;'/></div>" if has_roc else ""}
   {"<div class='section'><h2>Prediction Scatter</h2><img src='prediction_scatter.png' style='max-width: 640px; width: 100%;'/></div>" if has_scatter else ""}
   {"<div class='section'><h2>SHAP Summary</h2><img src='shap_summary.png' style='max-width: 640px; width: 100%;'/></div>" if has_shap else ""}
+  {"<div class='section'><h2>SHAP Interaction</h2><img src='shap_interaction.png' style='max-width: 640px; width: 100%;'/></div>" if has_shap_inter else ""}
+  {"<div class='section'><h2>Residual Plot</h2><img src='residuals.png' style='max-width: 640px; width: 100%;'/></div>" if has_residuals else ""}
 </body>
 </html>
 """
