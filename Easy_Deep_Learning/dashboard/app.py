@@ -297,7 +297,7 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab = st.tabs([
+train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, chatbot_tab = st.tabs([
     "Train Model",
     "Test Saved Model",
     "Image Models",
@@ -305,6 +305,7 @@ train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab = st.tabs([
     "Agent",
     "RAG",
     "Multimodal",
+    "Chatbot",
 ])
 
 with train_tab:
@@ -879,3 +880,45 @@ with mm_tab:
                 img = Image.open(query_image).convert("RGB")
                 results = search_by_image(index, img, top_k=int(top_k))
                 st.json(results)
+
+with chatbot_tab:
+    st.subheader("GitHub README Chatbot")
+    st.caption("GitHub 링크 또는 README 텍스트를 요약합니다. OpenAI 키가 없으면 룰 기반 요약으로 동작합니다.")
+
+    github_url = st.text_input("GitHub Repository URL", placeholder="https://github.com/owner/repo", key="chatbot_url")
+    readme_text = st.text_area("Or paste README content", height=180, key="chatbot_readme")
+    if st.button("Summarize README", type="primary"):
+        from Easy_Deep_Learning.core.chatbot import summarize_github_readme, summarize_readme_text
+
+        try:
+            if github_url.strip():
+                result = summarize_github_readme(github_url.strip())
+            elif readme_text.strip():
+                result = summarize_readme_text(readme_text.strip(), source="manual")
+            else:
+                st.error("GitHub URL 또는 README 텍스트를 입력하세요.")
+                result = None
+        except Exception as exc:
+            st.error(f"요약 실패: {exc}")
+            result = None
+
+        if result:
+            st.subheader(result.title)
+            st.write(result.summary)
+
+            if result.features:
+                st.subheader("Features")
+                st.write(result.features)
+            if result.setup:
+                st.subheader("Setup")
+                st.write(result.setup)
+            if result.usage:
+                st.subheader("Usage")
+                st.write(result.usage)
+            if result.commands:
+                st.subheader("Commands")
+                for block in result.commands:
+                    st.code(block)
+            if result.notes:
+                st.subheader("Notes")
+                st.write(result.notes)
