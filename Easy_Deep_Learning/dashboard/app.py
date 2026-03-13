@@ -297,13 +297,14 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab = st.tabs([
+train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab = st.tabs([
     "Train Model",
     "Test Saved Model",
     "Image Models",
     "Text Models",
     "Agent",
     "RAG",
+    "Multimodal",
 ])
 
 with train_tab:
@@ -824,3 +825,57 @@ with rag_tab:
                 st.write(ctx)
             st.subheader("Auto Evaluation")
             st.json(result.eval)
+
+with mm_tab:
+    st.subheader("Multimodal Search (Lite)")
+    st.caption("이미지/텍스트를 함께 업로드하여 간단한 유사도 검색 데모를 수행합니다.")
+
+    mm_texts = st.text_area("Texts (one per line)", height=120, key="mm_texts")
+    mm_images = st.file_uploader(
+        "Images (same count as texts)",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key="mm_images",
+    )
+    query_text = st.text_input("Text query", key="mm_query_text")
+    query_image = st.file_uploader("Image query", type=["png", "jpg", "jpeg"], key="mm_query_image")
+    top_k = st.number_input("Top-K", min_value=1, max_value=10, value=3, step=1, key="mm_topk")
+
+    if st.button("Build Index", type="primary"):
+        if not mm_texts.strip():
+            st.error("텍스트를 입력하세요.")
+        elif not mm_images:
+            st.error("이미지를 업로드하세요.")
+        else:
+            from Easy_Deep_Learning.core.multimodal import MMItem, build_index
+            from PIL import Image
+
+            texts = [line.strip() for line in mm_texts.splitlines() if line.strip()]
+            if len(texts) != len(mm_images):
+                st.error("텍스트 라인 수와 이미지 수가 같아야 합니다.")
+            else:
+                items = []
+                for i, (t, img_file) in enumerate(zip(texts, mm_images)):
+                    img = Image.open(img_file).convert("RGB")
+                    items.append(MMItem(id=f"item_{i}", text=t, image=img))
+
+                st.session_state["mm_index"] = build_index(items)
+                st.success("Index built.")
+
+    if "mm_index" in st.session_state:
+        index = st.session_state["mm_index"]
+        from Easy_Deep_Learning.core.multimodal import search_by_text, search_by_image
+        from PIL import Image
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if query_text.strip():
+                st.subheader("Text → Image/Text Results")
+                results = search_by_text(index, query_text, top_k=int(top_k))
+                st.json(results)
+        with col2:
+            if query_image is not None:
+                st.subheader("Image → Image/Text Results")
+                img = Image.open(query_image).convert("RGB")
+                results = search_by_image(index, img, top_k=int(top_k))
+                st.json(results)
