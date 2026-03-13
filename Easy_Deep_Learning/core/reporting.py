@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,94 @@ def _table_rows(payload: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def _fallback_ai_report(metrics: dict[str, Any], model_info: dict[str, Any], top_features: list[str]) -> dict[str, Any]:
+    task = model_info.get("task_type", "classification")
+    summary = f"{model_info.get('model_type', 'model')} model trained for {task}."
+    if metrics:
+        metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in metrics.items()])
+        summary += f" Metrics: {metrics_str}."
+    strengths = [
+        "Auto preprocessing handled missing values and encoding.",
+        "Run artifacts saved for reproducibility.",
+    ]
+    if top_features:
+        strengths.append(f"Top features: {', '.join(top_features[:5])}.")
+    risks = [
+        "Validate performance on out-of-sample data.",
+        "Check for class imbalance if accuracy looks misleading.",
+    ]
+    next_steps = [
+        "Try alternative models or hyperparameters.",
+        "Inspect PDP/ICE plots for key features.",
+    ]
+    return {
+        "summary": summary,
+        "strengths": strengths,
+        "risks": risks,
+        "next_steps": next_steps,
+    }
+
+
+def generate_ai_report(run_path: Path) -> Path:
+    """Generate AI-assisted narrative report (OpenAI optional)."""
+    metrics = _read_json(run_path / "metrics.json") or {}
+    model_info = _read_json(run_path / "model_info.json") or {}
+    top_features_payload = _read_json(run_path / "top_features.json") or []
+    top_features = [f[0] for f in top_features_payload] if top_features_payload else []
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    report = None
+    if api_key:
+        try:
+            from openai import OpenAI
+
+            client = OpenAI()
+            prompt = (
+                "Return STRICT JSON with keys: summary, strengths, risks, next_steps. "
+                "Summarize the model run. Keep it concise."
+            )
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                input=[
+                    {"role": "system", "content": "You generate concise ML reports."},
+                    {"role": "user", "content": prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "metrics": metrics,
+                                "model_info": model_info,
+                                "top_features": top_features,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+            )
+            text = ""
+            for item in response.output:
+                if item.type == "output_text":
+                    text += item.text
+            report = json.loads(text) if text else None
+        except Exception:
+            report = None
+
+    if report is None:
+        report = _fallback_ai_report(metrics, model_info, top_features)
+
+    report_path = run_path / "ai_report.json"
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    text_path = run_path / "ai_report.txt"
+    text_path.write_text(
+        f"Summary: {report.get('summary')}\n"
+        f"Strengths: {', '.join(report.get('strengths', []))}\n"
+        f"Risks: {', '.join(report.get('risks', []))}\n"
+        f"Next steps: {', '.join(report.get('next_steps', []))}\n",
+        encoding="utf-8",
+    )
+    return report_path
+
+
 def generate_html_report(run_path: Path) -> Path:
     """Generate a lightweight HTML report for a run."""
     metrics = _read_json(run_path / "metrics.json") or {}
@@ -28,9 +117,11 @@ def generate_html_report(run_path: Path) -> Path:
     model_params = _read_json(run_path / "model_params.json") or {}
     validation = _read_json(run_path / "validation_report.json") or {}
     predictions = _read_json(run_path / "predictions_preview.json") or {}
+    ai_report = _read_json(run_path / "ai_report.json") or {}
     has_cm = (run_path / "confusion_matrix.png").exists()
     has_roc = (run_path / "roc_curve.png").exists()
     has_scatter = (run_path / "prediction_scatter.png").exists()
+    has_shap = (run_path / "shap_summary.png").exists()
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -76,9 +167,15 @@ def generate_html_report(run_path: Path) -> Path:
     <pre>{json.dumps(predictions, indent=2)}</pre>
   </div>
 
+  <div class="section">
+    <h2>AI Report</h2>
+    <pre>{json.dumps(ai_report, indent=2, ensure_ascii=False)}</pre>
+  </div>
+
   {"<div class='section'><h2>Confusion Matrix</h2><img src='confusion_matrix.png' style='max-width: 640px; width: 100%;'/></div>" if has_cm else ""}
   {"<div class='section'><h2>ROC Curve</h2><img src='roc_curve.png' style='max-width: 640px; width: 100%;'/></div>" if has_roc else ""}
   {"<div class='section'><h2>Prediction Scatter</h2><img src='prediction_scatter.png' style='max-width: 640px; width: 100%;'/></div>" if has_scatter else ""}
+  {"<div class='section'><h2>SHAP Summary</h2><img src='shap_summary.png' style='max-width: 640px; width: 100%;'/></div>" if has_shap else ""}
 </body>
 </html>
 """

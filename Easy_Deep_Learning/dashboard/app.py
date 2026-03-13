@@ -251,6 +251,11 @@ def show_run_artifacts(run_path: Path) -> None:
         with report_path.open("rb") as f:
             st.download_button("Download report.html", f, file_name="report.html", mime="text/html")
 
+    ai_report_path = run_path / "ai_report.json"
+    if ai_report_path.exists():
+        st.subheader("AI Report")
+        st.json(json.loads(ai_report_path.read_text(encoding="utf-8")))
+
     cm_path = run_path / "confusion_matrix.png"
     if cm_path.exists():
         st.subheader("Confusion Matrix (saved)")
@@ -265,6 +270,23 @@ def show_run_artifacts(run_path: Path) -> None:
     if scatter_path.exists():
         st.subheader("Prediction Scatter (saved)")
         st.image(str(scatter_path))
+
+    shap_path = run_path / "shap_summary.png"
+    if shap_path.exists():
+        st.subheader("SHAP Summary (saved)")
+        st.image(str(shap_path))
+
+    pdp_paths = sorted(run_path.glob("pdp_*.png"))
+    if pdp_paths:
+        st.subheader("PDP (saved)")
+        for path in pdp_paths:
+            st.image(str(path))
+
+    ice_paths = sorted(run_path.glob("ice_*.png"))
+    if ice_paths:
+        st.subheader("ICE (saved)")
+        for path in ice_paths:
+            st.image(str(path))
 
     pred_path = run_path / "predictions_preview.json"
     if pred_path.exists():
