@@ -230,3 +230,52 @@ def summarize_readme_text(readme_text: str, source: str = "manual") -> ChatbotRe
 def summarize_github_readme(url: str) -> ChatbotResult:
     readme_text, source = fetch_readme_from_github(url)
     return summarize_readme_text(readme_text, source=source)
+
+
+def extract_github_urls(text: str) -> list[str]:
+    pattern = re.compile(r"https?://github\.com/[^\s)]+")
+    return pattern.findall(text)
+
+
+def _fallback_chat(message: str) -> str:
+    msg = message.strip().lower()
+    if "help" in msg or "사용법" in msg:
+        return (
+            "GitHub 링크를 입력하면 README를 요약합니다. "
+            "예: https://github.com/owner/repo"
+        )
+    if "summary" in msg or "요약" in msg:
+        urls = extract_github_urls(message)
+        if urls:
+            try:
+                result = summarize_github_readme(urls[0])
+                return f"[{result.title}]\n{result.summary}"
+            except Exception as exc:
+                return f"요약 실패: {exc}"
+        return "요약할 GitHub 링크를 함께 보내주세요."
+    return "질문을 구체적으로 알려주세요. GitHub 링크 요약을 지원합니다."
+
+
+def chat_response(message: str) -> str:
+    """Return a chatbot response using OpenAI if available, else a deterministic fallback."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return _fallback_chat(message)
+    try:
+        from openai import OpenAI
+    except Exception:
+        return _fallback_chat(message)
+
+    client = OpenAI()
+    response = client.responses.create(
+        model="gpt-4o-mini",
+        input=[
+            {"role": "system", "content": "You are a helpful assistant for Easy Deep Learning users."},
+            {"role": "user", "content": message},
+        ],
+    )
+    text = ""
+    for item in response.output:
+        if item.type == "output_text":
+            text += item.text
+    return text.strip() or _fallback_chat(message)

@@ -297,7 +297,7 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, chatbot_tab = st.tabs([
+train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
     "Train Model",
     "Test Saved Model",
     "Image Models",
@@ -305,6 +305,7 @@ train_tab, test_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, chatbot_ta
     "Agent",
     "RAG",
     "Multimodal",
+    "GitHub Summary",
     "Chatbot",
 ])
 
@@ -881,8 +882,8 @@ with mm_tab:
                 results = search_by_image(index, img, top_k=int(top_k))
                 st.json(results)
 
-with chatbot_tab:
-    st.subheader("GitHub README Chatbot")
+with summary_tab:
+    st.subheader("GitHub README Summary")
     st.caption("GitHub 링크 또는 README 텍스트를 요약합니다. OpenAI 키가 없으면 룰 기반 요약으로 동작합니다.")
 
     github_url = st.text_input("GitHub Repository URL", placeholder="https://github.com/owner/repo", key="chatbot_url")
@@ -922,3 +923,27 @@ with chatbot_tab:
             if result.notes:
                 st.subheader("Notes")
                 st.write(result.notes)
+
+with chatbot_tab:
+    st.subheader("Chatbot")
+    st.caption("대화형 챗봇입니다. OpenAI 키가 없으면 간단한 룰 기반 응답을 사용합니다.")
+
+    if "chat_messages" not in st.session_state:
+        st.session_state["chat_messages"] = []
+
+    for msg in st.session_state["chat_messages"]:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    user_input = st.chat_input("메시지를 입력하세요")
+    if user_input:
+        st.session_state["chat_messages"].append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.write(user_input)
+
+        from Easy_Deep_Learning.core.chatbot import chat_response
+
+        with st.chat_message("assistant"):
+            reply = chat_response(user_input)
+            st.write(reply)
+        st.session_state["chat_messages"].append({"role": "assistant", "content": reply})
