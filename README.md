@@ -199,3 +199,7 @@ streamlit run Easy_Deep_Learning/dashboard/app.py
 - **Agent 탭**: 데이터 요약 + 모델 추천 툴 호출 데모
 - **RAG 탭**: 문서 입력 → 검색 → 답변 + 자동 평가
 - **Multimodal 탭**: 이미지/텍스트 업로드 → 유사도 검색
+
+## 로드맵
+
+- **GitHub 링크 요약 챗봇**: GitHub 저장소 링크를 입력하면 README/사용법/기능 요약을 생성하는 챗봇 기능 추가 예정
