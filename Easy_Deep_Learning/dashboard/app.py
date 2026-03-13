@@ -271,7 +271,10 @@ def show_run_artifacts(run_path: Path) -> None:
         st.subheader("Tuning Results")
         try:
             tuning = json.loads(tuning_path.read_text(encoding="utf-8"))
-            st.dataframe(pd.DataFrame(tuning), use_container_width=True)
+            df_tune = pd.DataFrame(tuning)
+            if "score" in df_tune.columns:
+                df_tune = df_tune.sort_values("score", ascending=False)
+            st.dataframe(df_tune, use_container_width=True)
         except Exception:
             st.json(json.loads(tuning_path.read_text(encoding="utf-8")))
 

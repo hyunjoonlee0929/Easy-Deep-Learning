@@ -267,6 +267,7 @@ def train_and_save(
             task_type=task_type,
             label_encoder=model_result.label_encoder,
             raw_df=processed.X_test_raw,
+            feature_names=processed.feature_names,
         )
     except Exception:
         pass
@@ -568,8 +569,12 @@ def test_from_run(
             model=model,
             label_encoder=joblib.load(label_encoder_path) if label_encoder_path.exists() else None,
         )
+        feature_names = None
         try:
             feature_names = json.loads((run_path / "feature_names.json").read_text(encoding="utf-8"))
+        except Exception:
+            feature_names = None
+        try:
             generate_explainability_artifacts(
                 run_path=run_path,
                 model=model,
@@ -590,6 +595,7 @@ def test_from_run(
                 task_type=task_type,
                 label_encoder=label_encoder,
                 raw_df=X_test_df,
+                feature_names=feature_names or [],
             )
         except Exception:
             pass

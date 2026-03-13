@@ -25,6 +25,36 @@ def _normalize_value(val: Any) -> Any:
 def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return {k: _normalize_value(v) for k, v in row.items()}
 
+def _local_shap(
+    model: Any,
+    X: np.ndarray,
+    feature_names: list[str],
+) -> np.ndarray | None:
+    try:
+        import shap
+    except Exception:
+        return None
+
+    try:
+        explainer = None
+        if hasattr(model, "get_booster") or "xgboost" in model.__class__.__name__.lower():
+            explainer = shap.TreeExplainer(model)
+        elif hasattr(model, "coef_"):
+            explainer = shap.LinearExplainer(model, X, feature_names=feature_names)
+        elif hasattr(model, "feature_importances_"):
+            explainer = shap.TreeExplainer(model)
+
+        if explainer is None:
+            return None
+
+        shap_values = explainer.shap_values(X)
+        if isinstance(shap_values, list):
+            shap_array = np.mean([np.abs(v) for v in shap_values], axis=0)
+        else:
+            shap_array = np.abs(shap_values)
+        return shap_array
+    except Exception:
+        return None
 
 def generate_error_analysis(
     run_path: Path,
@@ -34,6 +64,7 @@ def generate_error_analysis(
     task_type: str,
     label_encoder: Any | None = None,
     raw_df: Any | None = None,
+    feature_names: list[str] | None = None,
     top_k: int = 10,
 ) -> dict[str, Any]:
     """Generate error analysis artifacts and JSON summary."""
@@ -137,6 +168,20 @@ def generate_error_analysis(
                 "top_errors": top_errors,
             }
         )
+
+    if feature_names and payload.get("top_errors"):
+        indices = [row["index"] for row in payload["top_errors"] if "index" in row]
+        if indices:
+            X_sub = X[indices]
+            shap_vals = _local_shap(model, X_sub, feature_names)
+            if shap_vals is not None:
+                for i, row in enumerate(payload["top_errors"]):
+                    vals = shap_vals[i]
+                    order = np.argsort(-np.abs(vals))[:5]
+                    row["local_importance"] = [
+                        {"feature": feature_names[idx], "value": float(vals[idx])}
+                        for idx in order
+                    ]
 
         try:
             import matplotlib.pyplot as plt
