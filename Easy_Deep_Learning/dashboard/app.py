@@ -1029,6 +1029,25 @@ with summary_tab:
                 st.subheader("Notes")
                 st.write(result.notes)
 
+    if st.button("Analyze Repo", type="secondary"):
+        from Easy_Deep_Learning.core.chatbot import summarize_github_repo
+
+        if not github_url.strip():
+            st.error("GitHub URL을 입력하세요.")
+        else:
+            try:
+                info = summarize_github_repo(github_url.strip())
+                st.subheader("Repository Overview")
+                st.write(info.get("summary", ""))
+                st.subheader("Key Files")
+                st.write(info.get("repo_info", {}).get("key_files", []))
+                st.subheader("Tech Stack")
+                st.write(info.get("repo_info", {}).get("tech_stack", []))
+                st.subheader("Suggested Commands")
+                st.write(info.get("repo_info", {}).get("commands", []))
+            except Exception as exc:
+                st.error(f"분석 실패: {exc}")
+
 with chatbot_tab:
     st.subheader("Chatbot")
     st.caption("대화형 챗봇입니다. OpenAI 키가 없으면 간단한 룰 기반 응답을 사용합니다.")

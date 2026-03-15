@@ -232,6 +232,69 @@ def summarize_github_readme(url: str) -> ChatbotResult:
     return summarize_readme_text(readme_text, source=source)
 
 
+def fetch_repo_contents(url: str, timeout: int = 12) -> list[dict[str, Any]]:
+    owner, repo, _ = _parse_github_url(url)
+    api = f"https://api.github.com/repos/{owner}/{repo}/contents"
+    session = requests.Session()
+    session.headers.update({"User-Agent": "EasyDeepLearning-Chatbot"})
+    resp = session.get(api, timeout=timeout)
+    resp.raise_for_status()
+    payload = resp.json()
+    return payload if isinstance(payload, list) else []
+
+
+def analyze_repo_structure(url: str) -> dict[str, Any]:
+    contents = fetch_repo_contents(url)
+    names = [item.get("name", "") for item in contents]
+    paths = [item.get("path", "") for item in contents]
+
+    key_files = []
+    for name in ["README.md", "requirements.txt", "pyproject.toml", "package.json", "main.py", "app.py"]:
+        if name in names:
+            key_files.append(name)
+
+    tech = []
+    if "requirements.txt" in names or "pyproject.toml" in names:
+        tech.append("python")
+    if "package.json" in names:
+        tech.append("node")
+
+    commands = []
+    if "requirements.txt" in names:
+        commands.append("pip install -r requirements.txt")
+    if "main.py" in names:
+        commands.append("python main.py --help")
+    if "app.py" in names or any("dashboard" in p for p in paths):
+        commands.append("streamlit run app.py")
+    if any("api" in p for p in paths) or "app.py" in paths:
+        commands.append("uvicorn api.app:app --reload --port 8000")
+
+    return {
+        "key_files": key_files,
+        "tech_stack": tech,
+        "commands": commands,
+        "file_count": len(paths),
+        "files": paths[:50],
+    }
+
+
+def summarize_github_repo(url: str) -> dict[str, Any]:
+    summary = summarize_github_readme(url)
+    try:
+        repo_info = analyze_repo_structure(url)
+    except Exception as exc:
+        repo_info = {"error": str(exc)}
+    return {
+        "title": summary.title,
+        "summary": summary.summary,
+        "features": summary.features,
+        "usage": summary.usage,
+        "setup": summary.setup,
+        "commands": summary.commands,
+        "repo_info": repo_info,
+        "source": summary.source,
+    }
+
 def extract_github_urls(text: str) -> list[str]:
     pattern = re.compile(r"https?://github\.com/[^\s)]+")
     return pattern.findall(text)
@@ -278,4 +341,18 @@ def chat_response(message: str) -> str:
     for item in response.output:
         if item.type == "output_text":
             text += item.text
-    return text.strip() or _fallback_chat(message)
+    if text.strip():
+        return text.strip()
+
+    urls = extract_github_urls(message)
+    if urls:
+        try:
+            info = summarize_github_repo(urls[0])
+            return (
+                f"{info['title']}\n{info['summary']}\n"
+                f"Features: {', '.join(info.get('features', [])[:5])}\n"
+                f"Commands: {', '.join(info.get('repo_info', {}).get('commands', []))}"
+            )
+        except Exception as exc:
+            return f"요약 실패: {exc}"
+    return _fallback_chat(message)
