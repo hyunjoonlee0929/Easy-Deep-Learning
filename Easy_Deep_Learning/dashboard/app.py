@@ -49,6 +49,22 @@ if api_key_input:
 else:
     st.sidebar.info("키를 입력하면 챗봇/요약 기능에서 OpenAI 사용 가능")
 
+st.sidebar.header("System Status")
+def _dep_status(module_name: str) -> tuple[bool, str]:
+    try:
+        __import__(module_name)
+        return True, "OK"
+    except Exception as exc:
+        return False, str(exc)
+
+with st.sidebar.expander("Dependencies", expanded=False):
+    for mod in ["fastapi", "uvicorn", "shap", "torch", "torchvision", "torchtext"]:
+        ok, detail = _dep_status(mod)
+        if ok:
+            st.write(f"OK: {mod}")
+        else:
+            st.write(f"Missing: {mod} ({detail.splitlines()[0]})")
+
 st.sidebar.header("Recent Runs")
 runs_dir = Path("runs")
 run_ids_sidebar = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
@@ -215,6 +231,26 @@ def show_dataset_summary(df: pd.DataFrame, target_col: str | None) -> None:
     st.dataframe(df.isna().sum().reset_index().rename(columns={"index": "column", 0: "missing"}))
 
 
+def show_data_profile(df: pd.DataFrame, target_col: str | None) -> None:
+    """Show quick schema/profile hints for UX."""
+    st.subheader("Data Profile")
+    type_counts = df.dtypes.astype(str).value_counts().reset_index()
+    type_counts.columns = ["dtype", "count"]
+    st.dataframe(type_counts, use_container_width=True)
+
+    st.subheader("Target Candidates")
+    candidates = []
+    for col in df.columns:
+        if col == target_col:
+            continue
+        nunique = df[col].nunique(dropna=True)
+        dtype = str(df[col].dtype)
+        candidates.append({"column": col, "nunique": int(nunique), "dtype": dtype})
+    if candidates:
+        cand_df = pd.DataFrame(candidates).sort_values("nunique", ascending=True)
+        st.dataframe(cand_df.head(20), use_container_width=True)
+
+
 def plot_confusion_and_roc(result: dict[str, Any]) -> None:
     """Render confusion matrix and ROC if classification predictions are present."""
     metrics = result.get("metrics", {})
@@ -259,7 +295,13 @@ def show_run_artifacts(run_path: Path) -> None:
     rec_path = run_path / "recommendations.json"
     if rec_path.exists():
         st.subheader("Recommendations")
-        st.json(json.loads(rec_path.read_text(encoding="utf-8")))
+        rec_payload = json.loads(rec_path.read_text(encoding="utf-8"))
+        priority = rec_payload.get("priority", [])
+        if priority:
+            st.write("Priority:")
+            st.write(priority)
+        with st.expander("All Recommendations", expanded=False):
+            st.json(rec_payload)
 
     best_params_path = run_path / "best_params.json"
     if best_params_path.exists():
@@ -282,7 +324,17 @@ def show_run_artifacts(run_path: Path) -> None:
     if err_path.exists():
         st.subheader("Error Analysis")
         err_payload = json.loads(err_path.read_text(encoding="utf-8"))
-        st.json(err_payload)
+        if err_payload.get("task_type") == "classification":
+            cols = st.columns(3)
+            cols[0].metric("Total", err_payload.get("total", 0))
+            cols[1].metric("Errors", err_payload.get("errors", 0))
+            cols[2].metric("Error Rate", f"{err_payload.get('error_rate', 0.0):.4f}")
+        else:
+            cols = st.columns(2)
+            cols[0].metric("Residual Mean", f"{err_payload.get('residual_mean', 0.0):.4f}")
+            cols[1].metric("Residual Std", f"{err_payload.get('residual_std', 0.0):.4f}")
+        with st.expander("Raw Error Analysis JSON", expanded=False):
+            st.json(err_payload)
         top_errors = err_payload.get("top_errors")
         if top_errors:
             try:
@@ -390,266 +442,276 @@ tabular_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatb
 ])
 
 with tabular_tab:
-    st.subheader("Train")
-    quick_defaults = quick_preset_state(quick_action)
-    if quick_action in ["Quick Classification", "Quick Regression"]:
-        st.info("Quick preset applied. Data source set to Preset Dataset.")
-        st.session_state["train_source_default"] = "Preset Dataset"
-        st.session_state["train_preset_default"] = quick_defaults.get("preset")
+    train_view, test_view, compare_view = st.tabs(["Train", "Test", "Compare"])
 
-    with st.expander("Step 1: Data", expanded=True):
-        train_df, preset_target = pick_data_source("train")
+    with train_view:
+        st.subheader("Train")
+        quick_defaults = quick_preset_state(quick_action)
+        if quick_action in ["Quick Classification", "Quick Regression"]:
+            st.info("Quick preset applied. Data source set to Preset Dataset.")
+            st.session_state["train_source_default"] = "Preset Dataset"
+            st.session_state["train_preset_default"] = quick_defaults.get("preset")
 
-    if train_df is not None:
-        if preset_target and preset_target in train_df.columns:
-            default_target = train_df.columns.get_loc(preset_target)
-        else:
-            default_target = len(train_df.columns) - 1
+        with st.expander("Step 1: Data", expanded=True):
+            train_df, preset_target = pick_data_source("train")
 
-        with st.expander("Step 2: Model", expanded=True):
-            target_col = st.selectbox(
-                "Target column",
-                options=train_df.columns.tolist(),
-                index=default_target,
-            )
-
-            show_dataset_summary(train_df, target_col)
-
-            task_type_options = ["classification", "regression"]
-            task_default = task_type_options.index(quick_defaults.get("task_type")) if quick_defaults.get("task_type") in task_type_options else 0
-            task_type = st.selectbox("Task type", options=task_type_options, index=task_default)
-
-            if task_type == "regression" and not pd.api.types.is_numeric_dtype(train_df[target_col]):
-                st.error("회귀 타겟은 숫자형이어야 합니다. 분류로 변경하거나 타겟 컬럼을 수정하세요.")
-            if task_type == "classification" and pd.api.types.is_numeric_dtype(train_df[target_col]):
-                if train_df[target_col].nunique() > 20:
-                    st.warning("클래스 수가 많아 보입니다. 회귀 문제인지 확인하세요.")
-
-            model_options = ["auto", "dnn", "rf", "svm", "knn", "lr", "gbm", "xgboost"]
-            model_default = model_options.index(quick_defaults.get("model_type")) if quick_defaults.get("model_type") in model_options else 0
-            model_type = st.selectbox("Model type", options=model_options, index=model_default)
-            seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="tab_seed")
-
-            st.subheader("Model Parameters")
-            params: dict[str, Any] = {}
-            if model_type == "auto":
-                rec_model, rec_params = recommend_model(train_df, target_col, task_type)
-                st.info(f"추천 모델: {rec_model}")
-                st.json(rec_params)
+        if train_df is not None:
+            if preset_target and preset_target in train_df.columns:
+                default_target = train_df.columns.get_loc(preset_target)
             else:
-                params = model_param_controls(model_type)
+                default_target = len(train_df.columns) - 1
 
-        with st.expander("Step 3: Run & Results", expanded=True):
-            if st.button("학습 실행", type="primary"):
-                tmp_train_path = Path("/tmp/easy_dl_train.csv")
-                train_df.to_csv(tmp_train_path, index=False)
+            with st.expander("Step 2: Model", expanded=True):
+                target_col = st.selectbox(
+                    "Target column",
+                    options=train_df.columns.tolist(),
+                    index=default_target,
+                )
 
-                with st.spinner("학습 및 아티팩트 저장 중..."):
-                    result = train_and_save(
-                        data_path=tmp_train_path,
-                    config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
-                        target_column=target_col,
-                        task_type=task_type,
-                        model_type=model_type,
-                        seed=int(seed),
-                        model_params=params,
-                    )
+                show_data_profile(train_df, target_col)
+                show_dataset_summary(train_df, target_col)
 
-                st.success(f"완료: run_id={result.run_id}")
-                cols = st.columns(max(1, len(result.metrics)))
-                for i, (k, v) in enumerate(result.metrics.items()):
-                    cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
-                st.code(str(result.run_path.resolve()))
-                show_run_artifacts(result.run_path)
+                task_type_options = ["classification", "regression"]
+                task_default = task_type_options.index(quick_defaults.get("task_type")) if quick_defaults.get("task_type") in task_type_options else 0
+                task_type = st.selectbox("Task type", options=task_type_options, index=task_default)
 
-            st.subheader("AutoML Leaderboard")
-            max_models = st.number_input("Max models", min_value=2, max_value=10, value=6, step=1, key="tab_automl_max")
-            if st.button("Leaderboard 실행", type="secondary"):
-                tmp_train_path = Path("/tmp/easy_dl_train.csv")
-                train_df.to_csv(tmp_train_path, index=False)
+                if task_type == "regression" and not pd.api.types.is_numeric_dtype(train_df[target_col]):
+                    st.error("회귀 타겟은 숫자형이어야 합니다. 분류로 변경하거나 타겟 컬럼을 수정하세요.")
+                if task_type == "classification" and pd.api.types.is_numeric_dtype(train_df[target_col]):
+                    if train_df[target_col].nunique() > 20:
+                        st.warning("클래스 수가 많아 보입니다. 회귀 문제인지 확인하세요.")
 
-                with st.spinner("여러 모델을 학습하고 리더보드를 생성 중..."):
-                    lb_result = run_leaderboard(
-                        data_path=tmp_train_path,
-                    config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
-                        target_column=target_col,
-                        task_type=task_type,
-                        seed=int(seed),
-                        max_models=int(max_models),
-                    )
+                model_options = ["auto", "dnn", "rf", "svm", "knn", "lr", "gbm", "xgboost"]
+                model_default = model_options.index(quick_defaults.get("model_type")) if quick_defaults.get("model_type") in model_options else 0
+                model_type = st.selectbox("Model type", options=model_options, index=model_default)
+                seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="tab_seed")
 
-                st.success(f"리더보드 완료: run_id={lb_result['run_id']}")
-                st.session_state["last_leaderboard"] = lb_result
-                lb_df = pd.DataFrame(lb_result["leaderboard"])
-                st.dataframe(lb_df, use_container_width=True)
-                if not lb_df.empty:
-                    csv_bytes = lb_df.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        "Download leaderboard.csv",
-                        data=csv_bytes,
-                        file_name="leaderboard.csv",
-                        mime="text/csv",
-                    )
-                best_run = lb_result.get("best_run")
-                if best_run:
-                    st.info(f"Best run: {best_run['run_id']} ({best_run['model_type']})")
+                st.subheader("Model Parameters")
+                params: dict[str, Any] = {}
+                if model_type == "auto":
+                    rec_model, rec_params = recommend_model(train_df, target_col, task_type)
+                    st.info(f"추천 모델: {rec_model}")
+                    st.json(rec_params)
+                else:
+                    params = model_param_controls(model_type)
 
-            last_lb = st.session_state.get("last_leaderboard")
-            if last_lb and last_lb.get("best_run"):
-                best_run = last_lb["best_run"]
-                if st.button("Best run 재학습", type="primary", key="retrain_best"):
-                    import yaml
+            with st.expander("Step 3: Run & Results", expanded=True):
+                if st.button("학습 실행", type="primary"):
+                    tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                    train_df.to_csv(tmp_train_path, index=False)
 
-                    best_run_id = best_run["run_id"]
-                    snapshot_path = Path("runs") / best_run_id / "config_snapshot.yaml"
-                    params_path = Path("runs") / best_run_id / "model_params.json"
-                    if not snapshot_path.exists() or not params_path.exists():
-                        st.error("Best run 정보가 충분하지 않습니다.")
-                    else:
-                        snapshot = yaml.safe_load(snapshot_path.read_text(encoding="utf-8"))
-                        params = json.loads(params_path.read_text(encoding="utf-8"))
+                    with st.spinner("학습 및 아티팩트 저장 중..."):
+                        result = train_and_save(
+                            data_path=tmp_train_path,
+                            config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
+                            target_column=target_col,
+                            task_type=task_type,
+                            model_type=model_type,
+                            seed=int(seed),
+                            model_params=params,
+                        )
 
-                        tmp_train_path = Path("/tmp/easy_dl_train.csv")
-                        train_df.to_csv(tmp_train_path, index=False)
-                        with st.spinner("Best run 설정으로 재학습 중..."):
-                            result = train_and_save(
-                                data_path=tmp_train_path,
-                                config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
-                                target_column=snapshot["input"]["target_column"],
-                                task_type=snapshot["input"]["task_type"],
-                                model_type=best_run["model_type"],
-                                seed=int(seed),
-                                model_params=params,
-                            )
-                        st.success(f"재학습 완료: run_id={result.run_id}")
-                        st.code(str(result.run_path.resolve()))
+                    st.success(f"완료: run_id={result.run_id}")
+                    cols = st.columns(max(1, len(result.metrics)))
+                    for i, (k, v) in enumerate(result.metrics.items()):
+                        cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
+                    st.code(str(result.run_path.resolve()))
+                    show_run_artifacts(result.run_path)
 
-            st.subheader("Auto Tuning")
-            tune_model = st.selectbox(
-                "Tuning model type",
-                options=["rf", "gbm", "xgboost", "svm", "knn", "lr"],
-                index=0,
-                key="tab_tune_model",
-            )
-            max_trials = st.number_input("Max trials", min_value=3, max_value=30, value=10, step=1, key="tab_tune_trials")
-            if st.button("Auto Tuning 실행", type="secondary", key="tab_tune_run"):
-                tmp_train_path = Path("/tmp/easy_dl_train.csv")
-                train_df.to_csv(tmp_train_path, index=False)
+                st.subheader("AutoML Leaderboard")
+                max_models = st.number_input("Max models", min_value=2, max_value=10, value=6, step=1, key="tab_automl_max")
+                if st.button("Leaderboard 실행", type="secondary"):
+                    tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                    train_df.to_csv(tmp_train_path, index=False)
 
-                with st.spinner("하이퍼파라미터 튜닝 + 학습 중..."):
-                    result = auto_tune_and_train(
-                        data_path=tmp_train_path,
-                        config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
-                        target_column=target_col,
-                        task_type=task_type,
-                        model_type=tune_model,
-                        seed=int(seed),
-                        max_trials=int(max_trials),
-                    )
-                st.success(f"튜닝 완료: run_id={result.run_id}")
-                st.code(str(result.run_path.resolve()))
-                show_run_artifacts(result.run_path)
+                    with st.spinner("여러 모델을 학습하고 리더보드를 생성 중..."):
+                        lb_result = run_leaderboard(
+                            data_path=tmp_train_path,
+                            config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
+                            target_column=target_col,
+                            task_type=task_type,
+                            seed=int(seed),
+                            max_models=int(max_models),
+                        )
 
-    st.subheader("Test Saved Model")
-    runs_dir = Path("runs")
-    run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
+                    st.success(f"리더보드 완료: run_id={lb_result['run_id']}")
+                    st.session_state["last_leaderboard"] = lb_result
+                    lb_df = pd.DataFrame(lb_result["leaderboard"])
+                    st.dataframe(lb_df, use_container_width=True)
+                    if not lb_df.empty:
+                        csv_bytes = lb_df.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            "Download leaderboard.csv",
+                            data=csv_bytes,
+                            file_name="leaderboard.csv",
+                            mime="text/csv",
+                        )
+                    best_run = lb_result.get("best_run")
+                    if best_run:
+                        st.info(f"Best run: {best_run['run_id']} ({best_run['model_type']})")
 
-    with st.expander("Step 1: Select Run", expanded=True):
-        run_options = run_ids if run_ids else [""]
-        default_index = run_options.index(selected_sidebar_run) if selected_sidebar_run in run_options else 0
-        selected_run = st.selectbox("Run ID 선택", options=run_options, index=default_index)
-        if selected_run:
-            show_run_artifacts(Path("runs") / selected_run)
+                last_lb = st.session_state.get("last_leaderboard")
+                if last_lb and last_lb.get("best_run"):
+                    best_run = last_lb["best_run"]
+                    if st.button("Best run 재학습", type="primary", key="retrain_best"):
+                        import yaml
 
-    with st.expander("Step 2: Data", expanded=True):
-        test_df, _ = pick_data_source("test")
-        target_override = st.text_input("Target column override (선택)", value="")
+                        best_run_id = best_run["run_id"]
+                        snapshot_path = Path("runs") / best_run_id / "config_snapshot.yaml"
+                        params_path = Path("runs") / best_run_id / "model_params.json"
+                        if not snapshot_path.exists() or not params_path.exists():
+                            st.error("Best run 정보가 충분하지 않습니다.")
+                        else:
+                            snapshot = yaml.safe_load(snapshot_path.read_text(encoding="utf-8"))
+                            params = json.loads(params_path.read_text(encoding="utf-8"))
 
-    if test_df is not None:
-        show_dataset_summary(test_df, target_override or None)
+                            tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                            train_df.to_csv(tmp_train_path, index=False)
+                            with st.spinner("Best run 설정으로 재학습 중..."):
+                                result = train_and_save(
+                                    data_path=tmp_train_path,
+                                    config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
+                                    target_column=snapshot["input"]["target_column"],
+                                    task_type=snapshot["input"]["task_type"],
+                                    model_type=best_run["model_type"],
+                                    seed=int(seed),
+                                    model_params=params,
+                                )
+                            st.success(f"재학습 완료: run_id={result.run_id}")
+                            st.code(str(result.run_path.resolve()))
 
-        if st.button("테스트 실행", type="primary"):
-            if not selected_run:
-                st.error("먼저 run_id를 선택하세요.")
-            else:
-                tmp_test_path = Path("/tmp/easy_dl_test.csv")
-                test_df.to_csv(tmp_test_path, index=False)
+                st.subheader("Auto Tuning")
+                tune_model = st.selectbox(
+                    "Tuning model type",
+                    options=["rf", "gbm", "xgboost", "svm", "knn", "lr"],
+                    index=0,
+                    key="tab_tune_model",
+                )
+                max_trials = st.number_input("Max trials", min_value=3, max_value=30, value=10, step=1, key="tab_tune_trials")
+                if st.button("Auto Tuning 실행", type="secondary", key="tab_tune_run"):
+                    tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                    train_df.to_csv(tmp_train_path, index=False)
 
-                with st.spinner("저장된 모델로 평가 중..."):
-                    result = test_from_run(
-                        run_id=selected_run,
-                        test_data_path=tmp_test_path,
-                        target_column=target_override.strip() or None,
-                        save_artifacts=True,
-                    )
+                    with st.spinner("하이퍼파라미터 튜닝 + 학습 중..."):
+                        result = auto_tune_and_train(
+                            data_path=tmp_train_path,
+                            config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
+                            target_column=target_col,
+                            task_type=task_type,
+                            model_type=tune_model,
+                            seed=int(seed),
+                            max_trials=int(max_trials),
+                        )
+                    st.success(f"튜닝 완료: run_id={result.run_id}")
+                    st.code(str(result.run_path.resolve()))
+                    show_run_artifacts(result.run_path)
 
-                st.success("평가 완료")
-                metrics = result.get("metrics", {})
-                cols = st.columns(max(1, len(metrics)))
-                for i, (k, v) in enumerate(metrics.items()):
-                    cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
+    with test_view:
+        st.subheader("Test Saved Model")
+        runs_dir = Path("runs")
+        run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
 
-                st.subheader("Prediction Preview")
-                preview = result.get("prediction_preview", {})
-                st.dataframe(pd.DataFrame(preview), use_container_width=True)
-
-                plot_confusion_and_roc(result)
-
-                st.subheader("Result JSON")
-                st.json(result)
+        with st.expander("Step 1: Select Run", expanded=True):
+            run_options = run_ids if run_ids else [""]
+            default_index = run_options.index(selected_sidebar_run) if selected_sidebar_run in run_options else 0
+            selected_run = st.selectbox("Run ID 선택", options=run_options, index=default_index)
+            if selected_run:
                 show_run_artifacts(Path("runs") / selected_run)
 
-    st.subheader("Compare Runs")
-    compare_ids = st.multiselect("Run ID 선택", options=run_ids, key="compare_runs")
-    if compare_ids:
-        rows = []
-        for rid in compare_ids:
-            metrics_path = Path("runs") / rid / "metrics.json"
-            info_path = Path("runs") / rid / "model_info.json"
-            if metrics_path.exists():
-                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        with st.expander("Step 2: Data", expanded=True):
+            test_df, _ = pick_data_source("test")
+            target_override = st.text_input("Target column override (선택)", value="")
+
+        if test_df is not None:
+            show_data_profile(test_df, target_override or None)
+            show_dataset_summary(test_df, target_override or None)
+
+            if st.button("테스트 실행", type="primary"):
+                if not selected_run:
+                    st.error("먼저 run_id를 선택하세요.")
+                else:
+                    tmp_test_path = Path("/tmp/easy_dl_test.csv")
+                    test_df.to_csv(tmp_test_path, index=False)
+
+                    with st.spinner("저장된 모델로 평가 중..."):
+                        result = test_from_run(
+                            run_id=selected_run,
+                            test_data_path=tmp_test_path,
+                            target_column=target_override.strip() or None,
+                            save_artifacts=True,
+                        )
+
+                    st.success("평가 완료")
+                    metrics = result.get("metrics", {})
+                    cols = st.columns(max(1, len(metrics)))
+                    for i, (k, v) in enumerate(metrics.items()):
+                        cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
+
+                    st.subheader("Prediction Preview")
+                    preview = result.get("prediction_preview", {})
+                    st.dataframe(pd.DataFrame(preview), use_container_width=True)
+
+                    plot_confusion_and_roc(result)
+
+                    st.subheader("Result JSON")
+                    st.json(result)
+                    show_run_artifacts(Path("runs") / selected_run)
+
+    with compare_view:
+        st.subheader("Compare Runs")
+        runs_dir = Path("runs")
+        run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
+
+        compare_ids = st.multiselect("Run ID 선택", options=run_ids, key="compare_runs")
+        if compare_ids:
+            rows = []
+            for rid in compare_ids:
+                metrics_path = Path("runs") / rid / "metrics.json"
+                info_path = Path("runs") / rid / "model_info.json"
+                if metrics_path.exists():
+                    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+                else:
+                    metrics = {}
+                model_type = ""
+                task_type = ""
+                if info_path.exists():
+                    info = json.loads(info_path.read_text(encoding="utf-8"))
+                    model_type = info.get("model_type", "")
+                    task_type = info.get("task_type", "")
+                row = {"run_id": rid, "model_type": model_type, "task_type": task_type}
+                row.update(metrics)
+                rows.append(row)
+            df_rows = pd.DataFrame(rows)
+            if not df_rows.empty:
+                def _score_row(r: pd.Series) -> float:
+                    if r.get("task_type") == "classification":
+                        if "f1_weighted" in r:
+                            return float(r.get("f1_weighted", 0.0))
+                        return float(r.get("accuracy", 0.0))
+                    return float(r.get("r2", -1e9))
+
+                df_rows["score"] = df_rows.apply(_score_row, axis=1)
+                best_idx = df_rows["score"].idxmax()
+
+                def _highlight_best(row: pd.Series) -> list[str]:
+                    if row.name == best_idx:
+                        return ["background-color: #dcfce7"] * len(row)
+                    return ["" for _ in row]
+
+                st.dataframe(df_rows.style.apply(_highlight_best, axis=1), use_container_width=True)
             else:
-                metrics = {}
-            model_type = ""
-            task_type = ""
-            if info_path.exists():
-                info = json.loads(info_path.read_text(encoding="utf-8"))
-                model_type = info.get("model_type", "")
-                task_type = info.get("task_type", "")
-            row = {"run_id": rid, "model_type": model_type, "task_type": task_type}
-            row.update(metrics)
-            rows.append(row)
-        df_rows = pd.DataFrame(rows)
-        if not df_rows.empty:
-            def _score_row(r: pd.Series) -> float:
-                if r.get("task_type") == "classification":
-                    if "f1_weighted" in r:
-                        return float(r.get("f1_weighted", 0.0))
-                    return float(r.get("accuracy", 0.0))
-                return float(r.get("r2", -1e9))
+                st.dataframe(df_rows, use_container_width=True)
 
-            df_rows["score"] = df_rows.apply(_score_row, axis=1)
-            best_idx = df_rows["score"].idxmax()
+            if st.button("Generate Compare Report", type="secondary"):
+                from Easy_Deep_Learning.core.compare import generate_compare_report
 
-            def _highlight_best(row: pd.Series) -> list[str]:
-                if row.name == best_idx:
-                    return ["background-color: #dcfce7"] * len(row)
-                return ["" for _ in row]
-
-            st.dataframe(df_rows.style.apply(_highlight_best, axis=1), use_container_width=True)
-        else:
-            st.dataframe(df_rows, use_container_width=True)
-
-        if st.button("Generate Compare Report", type="secondary"):
-            from Easy_Deep_Learning.core.compare import generate_compare_report
-
-            result = generate_compare_report(compare_ids)
-            st.success("Comparison report generated.")
-            st.code(result.get("report_dir", ""))
-            report_path = Path(result.get("report_dir", "")) / "compare_report.html"
-            if report_path.exists():
-                with report_path.open("rb") as f:
-                    st.download_button("Download compare_report.html", f, file_name="compare_report.html", mime="text/html")
+                result = generate_compare_report(compare_ids)
+                st.success("Comparison report generated.")
+                st.code(result.get("report_dir", ""))
+                report_path = Path(result.get("report_dir", "")) / "compare_report.html"
+                if report_path.exists():
+                    with report_path.open("rb") as f:
+                        st.download_button("Download compare_report.html", f, file_name="compare_report.html", mime="text/html")
 
 with image_tab:
     st.subheader("Image Models (CNN)")
@@ -1000,7 +1062,7 @@ with mm_tab:
 
 with summary_tab:
     st.subheader("GitHub README Summary")
-    st.caption("GitHub 링크 또는 README 텍스트를 요약합니다. OpenAI 키가 없으면 룰 기반 요약으로 동작합니다.")
+    st.caption("리포트형 요약 탭입니다. GitHub 링크 또는 README 텍스트를 분석해 구조/기능/사용법을 정리합니다.")
 
     github_url = st.text_input("GitHub Repository URL", placeholder="https://github.com/owner/repo", key="chatbot_url")
     readme_text = st.text_area("Or paste README content", height=180, key="chatbot_readme")
@@ -1061,7 +1123,7 @@ with summary_tab:
 
 with chatbot_tab:
     st.subheader("Chatbot")
-    st.caption("대화형 챗봇입니다. OpenAI 키가 없으면 간단한 룰 기반 응답을 사용합니다.")
+    st.caption("질문형 챗봇입니다. GitHub 링크를 포함한 질문에 답변합니다.")
 
     if "chat_messages" not in st.session_state:
         st.session_state["chat_messages"] = []
