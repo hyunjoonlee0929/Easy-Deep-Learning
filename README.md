@@ -74,6 +74,20 @@ pip install -r Easy_Deep_Learning/requirements.txt
 streamlit run Easy_Deep_Learning/dashboard/app.py
 ```
 
+## FastAPI 예측 서버
+
+```bash
+uvicorn Easy_Deep_Learning.api.app:app --reload --port 8000
+```
+
+요청 예시:
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"run_id":"<run_id>","records":[{"col1":1.2,"col2":"A"}]}'
+```
+
 ## CLI 사용법
 
 ### 1) 학습
