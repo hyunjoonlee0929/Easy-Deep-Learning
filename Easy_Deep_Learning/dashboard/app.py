@@ -640,6 +640,17 @@ with tabular_tab:
         else:
             st.dataframe(df_rows, use_container_width=True)
 
+        if st.button("Generate Compare Report", type="secondary"):
+            from Easy_Deep_Learning.core.compare import generate_compare_report
+
+            result = generate_compare_report(compare_ids)
+            st.success("Comparison report generated.")
+            st.code(result.get("report_dir", ""))
+            report_path = Path(result.get("report_dir", "")) / "compare_report.html"
+            if report_path.exists():
+                with report_path.open("rb") as f:
+                    st.download_button("Download compare_report.html", f, file_name="compare_report.html", mime="text/html")
+
 with image_tab:
     st.subheader("Image Models (CNN)")
     data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="img_cache")

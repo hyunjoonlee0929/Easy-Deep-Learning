@@ -181,6 +181,12 @@ python Easy_Deep_Learning/main.py tune \
   --max-trials 10
 ```
 
+### 9) Run Comparison Report
+
+```bash
+python Easy_Deep_Learning/main.py compare --run-ids <run_id_1>,<run_id_2>
+```
+
 커스텀 텍스트 CSV 사용:
 
 ```bash

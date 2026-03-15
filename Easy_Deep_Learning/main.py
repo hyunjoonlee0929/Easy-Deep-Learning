@@ -109,6 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
     rag.add_argument("--chunk-size", type=int, default=400)
     rag.add_argument("--overlap", type=int, default=80)
 
+    compare = subparsers.add_parser("compare", help="Compare multiple runs and generate a report")
+    compare.add_argument("--run-ids", type=str, required=True, help="Comma-separated run IDs")
+
     return parser
 
 
@@ -295,6 +298,14 @@ def main() -> None:
             "scores": result.scores,
             "eval": result.eval,
         }, indent=2))
+        return
+
+    if args.command == "compare":
+        from Easy_Deep_Learning.core.compare import generate_compare_report
+
+        run_ids = [rid.strip() for rid in args.run_ids.split(",") if rid.strip()]
+        payload = generate_compare_report(run_ids)
+        print(json.dumps(payload, indent=2))
         return
 
     parser.error("Unknown command")
