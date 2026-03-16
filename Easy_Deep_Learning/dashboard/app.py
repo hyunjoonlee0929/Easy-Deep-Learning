@@ -495,14 +495,12 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-tabular_tab, image_tab, text_tab, audio_tab, video_tab, image_det_tab, video_det_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
+tabular_tab, image_tab, text_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
     "Tabular",
-    "Image Models",
+    "Image",
     "Text Models",
     "Audio Demo",
-    "Video Demo",
-    "Image Detection",
-    "Video Detection",
+    "Video",
     "Agent",
     "RAG",
     "Multimodal",
@@ -807,120 +805,171 @@ with tabular_tab:
                         st.download_button("Download compare_report.html", f, file_name="compare_report.html", mime="text/html")
 
 with image_tab:
-    st.subheader("Image Models (CNN)")
-    data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="img_cache")
+    image_models_tab, image_det_tab = st.tabs(["Image Models", "Image Detection"])
 
-    if not torch_available():
-        st.info("Torch/torchvision이 설치되어 있지 않아 이미지 모델을 사용할 수 없습니다.")
-    else:
-        if quick_action == "Quick Image Demo":
-            st.info("Quick Image Demo preset applied.")
-        image_defaults = quick_preset_state(quick_action)
-        with st.expander("Step 1: Dataset & Model", expanded=True):
-            dataset_options = ["MNIST", "FashionMNIST", "CIFAR10", "SVHN", "EMNIST"]
-            dataset_default = dataset_options.index(image_defaults.get("image_dataset")) if image_defaults.get("image_dataset") in dataset_options else 0
-            dataset = st.selectbox(
-                "Dataset",
-                options=dataset_options,
-                index=dataset_default,
-                key="img_dataset",
-            )
-            arch_options = ["cnn", "resnet18"]
-            arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
-            model_arch = st.selectbox("Model architecture", options=arch_options, index=arch_default, key="img_arch")
+    with image_models_tab:
+        st.subheader("Image Models (CNN)")
+        data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="img_cache")
 
-        with st.expander("Step 2: Training Params", expanded=True):
-            epochs = st.number_input("Epochs", min_value=1, max_value=50, value=5, step=1, key="img_epochs")
-            lr = st.number_input("Learning rate", min_value=1e-4, max_value=1e-1, value=1e-3, format="%.5f", key="img_lr")
-            batch_size = st.number_input("Batch size", min_value=16, max_value=512, value=64, step=16, key="img_batch")
-            seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="img_seed")
+        if not torch_available():
+            st.info("Torch/torchvision이 설치되어 있지 않아 이미지 모델을 사용할 수 없습니다.")
+        else:
+            if quick_action == "Quick Image Demo":
+                st.info("Quick Image Demo preset applied.")
+            image_defaults = quick_preset_state(quick_action)
+            with st.expander("Step 1: Dataset & Model", expanded=True):
+                dataset_options = ["MNIST", "FashionMNIST", "CIFAR10", "SVHN", "EMNIST"]
+                dataset_default = dataset_options.index(image_defaults.get("image_dataset")) if image_defaults.get("image_dataset") in dataset_options else 0
+                dataset = st.selectbox(
+                    "Dataset",
+                    options=dataset_options,
+                    index=dataset_default,
+                    key="img_dataset",
+                )
+                arch_options = ["cnn", "resnet18"]
+                arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
+                model_arch = st.selectbox("Model architecture", options=arch_options, index=arch_default, key="img_arch")
 
-        with st.expander("Step 3: Train & Results", expanded=True):
-            if st.button("Train CNN", type="primary"):
-                from Easy_Deep_Learning.core.torch_workflows import train_cnn_image
+            with st.expander("Step 2: Training Params", expanded=True):
+                epochs = st.number_input("Epochs", min_value=1, max_value=50, value=5, step=1, key="img_epochs")
+                lr = st.number_input("Learning rate", min_value=1e-4, max_value=1e-1, value=1e-3, format="%.5f", key="img_lr")
+                batch_size = st.number_input("Batch size", min_value=16, max_value=512, value=64, step=16, key="img_batch")
+                seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="img_seed")
 
-                with st.spinner("Training CNN..."):
-                    result = train_cnn_image(
-                        dataset_name=dataset,
-                        epochs=int(epochs),
-                        lr=float(lr),
-                        batch_size=int(batch_size),
-                        seed=int(seed),
-                        data_dir=Path(data_dir),
-                        model_arch=model_arch,
-                    )
-                st.success(f"완료: run_id={result.run_id}")
-                st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
-                st.code(str(result.run_path.resolve()))
+            with st.expander("Step 3: Train & Results", expanded=True):
+                if st.button("Train CNN", type="primary"):
+                    from Easy_Deep_Learning.core.torch_workflows import train_cnn_image
 
-            st.subheader("Dataset Preview")
-            if st.button("Load Preview", key="img_preview"):
+                    with st.spinner("Training CNN..."):
+                        result = train_cnn_image(
+                            dataset_name=dataset,
+                            epochs=int(epochs),
+                            lr=float(lr),
+                            batch_size=int(batch_size),
+                            seed=int(seed),
+                            data_dir=Path(data_dir),
+                            model_arch=model_arch,
+                        )
+                    st.success(f"완료: run_id={result.run_id}")
+                    st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
+                    st.code(str(result.run_path.resolve()))
+
+                st.subheader("Dataset Preview")
+                if st.button("Load Preview", key="img_preview"):
+                    import torchvision
+                    from torchvision import transforms
+
+                    if dataset == "MNIST":
+                        ds_cls = torchvision.datasets.MNIST
+                    elif dataset == "FashionMNIST":
+                        ds_cls = torchvision.datasets.FashionMNIST
+                    elif dataset == "SVHN":
+                        ds_cls = torchvision.datasets.SVHN
+                    elif dataset == "EMNIST":
+                        ds_cls = torchvision.datasets.EMNIST
+                    else:
+                        ds_cls = torchvision.datasets.CIFAR10
+
+                    if dataset == "SVHN":
+                        preview_ds = ds_cls(root=str(data_dir), split="train", download=True, transform=transforms.ToTensor())
+                    elif dataset == "EMNIST":
+                        preview_ds = ds_cls(root=str(data_dir), split="balanced", train=True, download=True, transform=transforms.ToTensor())
+                    else:
+                        preview_ds = ds_cls(root=str(data_dir), train=True, download=True, transform=transforms.ToTensor())
+                    images = []
+                    labels = []
+                    for i in range(min(12, len(preview_ds))):
+                        img, lbl = preview_ds[i]
+                        img_np = img.detach().cpu().numpy()
+                        if img_np.shape[0] in (1, 3):
+                            img_np = img_np.transpose(1, 2, 0)
+                        images.append(img_np)
+                        labels.append(str(lbl))
+
+                    st.image(images, caption=labels, width=120)
+
+                st.subheader("Test Saved CNN")
+                cnn_runs = [rid for rid in run_ids if rid.endswith("_cnn")]
+                selected_cnn = st.selectbox("CNN run_id", options=cnn_runs, key="cnn_run")
+                if st.button("Test CNN", type="secondary") and selected_cnn:
+                    from Easy_Deep_Learning.core.torch_workflows import test_cnn_image
+
+                    with st.spinner("Testing CNN..."):
+                        result = test_cnn_image(selected_cnn)
+                    st.metric("accuracy", f"{result['accuracy']:.4f}")
+
+                st.subheader("Custom Image Prediction")
+                uploaded_imgs = st.file_uploader("Upload images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="img_upload")
+                pred_run = st.selectbox("Run ID for prediction", options=cnn_runs, key="img_pred_run")
+                show_cam = st.checkbox("Show Grad-CAM", value=False, key="img_cam")
+                if uploaded_imgs and pred_run:
+                    if show_cam:
+                        from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images_with_cam
+                        import matplotlib.cm as cm
+
+                        img_bytes = [u.getvalue() for u in uploaded_imgs]
+                        with st.spinner("Running predictions + Grad-CAM..."):
+                            preds = predict_cnn_images_with_cam(pred_run, img_bytes)
+                        for i, pred in enumerate(preds):
+                            heat = cm.magma(pred["cam"])
+                            st.image(uploaded_imgs[i], caption=f"{pred['label']} ({pred['prob']:.3f})")
+                            st.image(heat, caption="Grad-CAM", width=180)
+                    else:
+                        from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images
+
+                        img_bytes = [u.getvalue() for u in uploaded_imgs]
+                        with st.spinner("Running predictions..."):
+                            preds = predict_cnn_images(pred_run, img_bytes)
+                        for i, pred in enumerate(preds):
+                            st.image(uploaded_imgs[i], caption=f"{pred['label']} ({pred['prob']:.3f})")
+
+    with image_det_tab:
+        st.subheader("Image Detection")
+        st.caption("대표 데이터셋 샘플 또는 이미지 업로드로 객체 탐지 데모.")
+        from Easy_Deep_Learning.core.detection import detect_image_pil
+        from PIL import Image
+
+        det_data_dir = st.text_input("Detection dataset cache dir", value="/tmp/easy_dl", key="det_cache")
+        det_source = st.selectbox("Data source", options=["Upload Image", "VOC (download)", "COCO (download)"], key="det_source")
+        image = None
+        if det_source == "Upload Image":
+            up = st.file_uploader("Upload image", type=["png", "jpg", "jpeg"], key="det_upload")
+            if up:
+                image = Image.open(up).convert("RGB")
+        elif det_source == "VOC (download)":
+            try:
                 import torchvision
-                from torchvision import transforms
+                ds = torchvision.datasets.VOCDetection(root=det_data_dir, year="2007", image_set="val", download=True)
+                image, _ = ds[0]
+            except Exception as exc:
+                st.error(f"VOC load failed: {exc}")
+        else:
+            try:
+                import torchvision
+                ds = torchvision.datasets.CocoDetection(root=det_data_dir, annFile=str(Path(det_data_dir)/'annotations/instances_val2017.json'))
+                image, _ = ds[0]
+            except Exception as exc:
+                st.error(f"COCO load failed: {exc}")
 
-                if dataset == "MNIST":
-                    ds_cls = torchvision.datasets.MNIST
-                elif dataset == "FashionMNIST":
-                    ds_cls = torchvision.datasets.FashionMNIST
-                elif dataset == "SVHN":
-                    ds_cls = torchvision.datasets.SVHN
-                elif dataset == "EMNIST":
-                    ds_cls = torchvision.datasets.EMNIST
-                else:
-                    ds_cls = torchvision.datasets.CIFAR10
+        model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_model")
+        conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_conf")
+        yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_weights")
 
-                if dataset == "SVHN":
-                    preview_ds = ds_cls(root=str(data_dir), split="train", download=True, transform=transforms.ToTensor())
-                elif dataset == "EMNIST":
-                    preview_ds = ds_cls(root=str(data_dir), split="balanced", train=True, download=True, transform=transforms.ToTensor())
-                else:
-                    preview_ds = ds_cls(root=str(data_dir), train=True, download=True, transform=transforms.ToTensor())
-                images = []
-                labels = []
-                for i in range(min(12, len(preview_ds))):
-                    img, lbl = preview_ds[i]
-                    img_np = img.detach().cpu().numpy()
-                    if img_np.shape[0] in (1, 3):
-                        img_np = img_np.transpose(1, 2, 0)
-                    images.append(img_np)
-                    labels.append(str(lbl))
-
-                st.image(images, caption=labels, width=120)
-
-            st.subheader("Test Saved CNN")
-            cnn_runs = [rid for rid in run_ids if rid.endswith("_cnn")]
-            selected_cnn = st.selectbox("CNN run_id", options=cnn_runs, key="cnn_run")
-            if st.button("Test CNN", type="secondary") and selected_cnn:
-                from Easy_Deep_Learning.core.torch_workflows import test_cnn_image
-
-                with st.spinner("Testing CNN..."):
-                    result = test_cnn_image(selected_cnn)
-                st.metric("accuracy", f"{result['accuracy']:.4f}")
-
-            st.subheader("Custom Image Prediction")
-            uploaded_imgs = st.file_uploader("Upload images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="img_upload")
-            pred_run = st.selectbox("Run ID for prediction", options=cnn_runs, key="img_pred_run")
-            show_cam = st.checkbox("Show Grad-CAM", value=False, key="img_cam")
-            if uploaded_imgs and pred_run:
-                if show_cam:
-                    from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images_with_cam
-                    import matplotlib.cm as cm
-
-                    img_bytes = [u.getvalue() for u in uploaded_imgs]
-                    with st.spinner("Running predictions + Grad-CAM..."):
-                        preds = predict_cnn_images_with_cam(pred_run, img_bytes)
-                    for i, pred in enumerate(preds):
-                        heat = cm.magma(pred["cam"])
-                        st.image(uploaded_imgs[i], caption=f"{pred['label']} ({pred['prob']:.3f})")
-                        st.image(heat, caption="Grad-CAM", width=180)
-                else:
-                    from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images
-
-                    img_bytes = [u.getvalue() for u in uploaded_imgs]
-                    with st.spinner("Running predictions..."):
-                        preds = predict_cnn_images(pred_run, img_bytes)
-                    for i, pred in enumerate(preds):
-                        st.image(uploaded_imgs[i], caption=f"{pred['label']} ({pred['prob']:.3f})")
+        if image is not None:
+            st.image(image, caption="Input", use_container_width=True)
+            if st.button("Run Detection", type="primary", key="det_run"):
+                try:
+                    if model_choice.startswith("YOLO"):
+                        out_img, dets = detect_image_pil(image, model_type="yolo", conf=conf, model_name=yolo_weights)
+                    else:
+                        out_img, dets = detect_image_pil(image, model_type="fasterrcnn", conf=conf)
+                    st.subheader("Detections")
+                    st.image(out_img, use_container_width=True)
+                    st.json(dets)
+                except Exception as exc:
+                    st.error(f"Detection failed: {exc}")
+        else:
+            st.info("이미지를 준비하세요.")
 
 with text_tab:
     st.subheader("Text Models (RNN)")
@@ -1162,124 +1211,102 @@ with audio_tab:
         st.metric("Audio Demo Prediction", label)
 
 with video_tab:
-    st.subheader("Video Demo (Frame Sequence)")
-    st.caption("Built-in synthetic frames or multiple image upload as frames. Feature extraction + demo classifier.")
-    from Easy_Deep_Learning.core.media_demo import generate_synthetic_video, video_features, build_video_dataset
-    from PIL import Image
-    from sklearn.ensemble import RandomForestClassifier
+    video_demo_tab, video_det_tab = st.tabs(["Video Demo", "Video Detection"])
 
-    use_builtin = st.checkbox("Use built-in synthetic video", value=True, key="video_builtin")
-    frames = []
-    if use_builtin:
-        frames = generate_synthetic_video()
-    else:
-        uploaded_imgs = st.file_uploader("Upload frames (multiple images)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="video_upload")
-        if uploaded_imgs:
-            for f in uploaded_imgs:
-                img = Image.open(f).convert("RGB")
-                frames.append(np.array(img))
+    with video_demo_tab:
+        st.subheader("Video Demo (Frame Sequence)")
+        st.caption("Built-in synthetic frames or multiple image upload as frames. Feature extraction + demo classifier.")
+        from Easy_Deep_Learning.core.media_demo import generate_synthetic_video, video_features, build_video_dataset
+        from PIL import Image
+        from sklearn.ensemble import RandomForestClassifier
 
-    if frames:
-        st.subheader("Frame Preview")
-        st.image(frames[:6], caption=[f"frame {i}" for i in range(min(6, len(frames)))], width=120)
-        st.subheader("Video Features")
-        v_feats = video_features(frames)
-        st.json(v_feats)
-        st.subheader("Video Classification Demo")
-        if st.button("Train Video Demo Classifier", type="primary"):
-            X, y = build_video_dataset()
-            clf = RandomForestClassifier(n_estimators=200, random_state=42)
-            clf.fit(X, y)
-            st.session_state["video_clf"] = clf
-            st.success("Video demo model trained.")
+        use_builtin = st.checkbox("Use built-in synthetic video", value=True, key="video_builtin")
+        frames = []
+        if use_builtin:
+            frames = generate_synthetic_video()
+        else:
+            uploaded_imgs = st.file_uploader("Upload frames (multiple images)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="video_upload")
+            if uploaded_imgs:
+                for f in uploaded_imgs:
+                    img = Image.open(f).convert("RGB")
+                    frames.append(np.array(img))
 
-        if "video_clf" in st.session_state:
-            X_infer = np.array([[v_feats["mean_intensity"], v_feats["motion_energy"], v_feats["num_frames"]]], dtype=np.float32)
-            pred = st.session_state["video_clf"].predict(X_infer)[0]
-            label = "Low motion" if int(pred) == 0 else "High motion"
-            st.metric("Video Demo Prediction", label)
-    else:
-        st.info("프레임을 업로드하세요.")
+        if frames:
+            st.subheader("Frame Preview")
+            st.image(frames[:6], caption=[f"frame {i}" for i in range(min(6, len(frames)))], width=120)
+            st.subheader("Video Features")
+            v_feats = video_features(frames)
+            st.json(v_feats)
+            st.subheader("Video Classification Demo")
+            if st.button("Train Video Demo Classifier", type="primary"):
+                X, y = build_video_dataset()
+                clf = RandomForestClassifier(n_estimators=200, random_state=42)
+                clf.fit(X, y)
+                st.session_state["video_clf"] = clf
+                st.success("Video demo model trained.")
 
-with image_det_tab:
-    st.subheader("Image Detection")
-    st.caption("대표 데이터셋 샘플 또는 이미지 업로드로 객체 탐지 데모.")
-    from Easy_Deep_Learning.core.detection import detect_image_pil
-    from PIL import Image
+            if "video_clf" in st.session_state:
+                X_infer = np.array([[v_feats["mean_intensity"], v_feats["motion_energy"], v_feats["num_frames"]]], dtype=np.float32)
+                pred = st.session_state["video_clf"].predict(X_infer)[0]
+                label = "Low motion" if int(pred) == 0 else "High motion"
+                st.metric("Video Demo Prediction", label)
+        else:
+            st.info("프레임을 업로드하세요.")
 
-    det_data_dir = st.text_input("Detection dataset cache dir", value="/tmp/easy_dl", key="det_cache")
-    det_source = st.selectbox("Data source", options=["Upload Image", "VOC (download)", "COCO (download)"], key="det_source")
-    image = None
-    if det_source == "Upload Image":
-        up = st.file_uploader("Upload image", type=["png", "jpg", "jpeg"], key="det_upload")
-        if up:
-            image = Image.open(up).convert("RGB")
-    elif det_source == "VOC (download)":
-        try:
-            import torchvision
-            ds = torchvision.datasets.VOCDetection(root=det_data_dir, year="2007", image_set="val", download=True)
-            image, _ = ds[0]
-        except Exception as exc:
-            st.error(f"VOC load failed: {exc}")
-    else:
-        try:
-            import torchvision
-            ds = torchvision.datasets.CocoDetection(root=det_data_dir, annFile=str(Path(det_data_dir)/'annotations/instances_val2017.json'))
-            image, _ = ds[0]
-        except Exception as exc:
-            st.error(f"COCO load failed: {exc}")
+    with video_det_tab:
+        st.subheader("Video Detection")
+        st.caption("MP4 업로드 후 프레임 단위 객체 탐지 데모.")
+        from Easy_Deep_Learning.core.detection import detect_video_bytes
+        vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
+        use_builtin = st.checkbox("Use built-in sample video (requires opencv)", value=False, key="det_video_builtin")
+        model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_video_model")
+        conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_video_conf")
+        frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
+        max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
+        yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_video_weights")
 
-    model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_model")
-    conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_conf")
-    yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_weights")
-
-    if image is not None:
-        st.image(image, caption="Input", use_container_width=True)
-        if st.button("Run Detection", type="primary", key="det_run"):
+        if use_builtin:
             try:
-                if model_choice.startswith("YOLO"):
-                    out_img, dets = detect_image_pil(image, model_type="yolo", conf=conf, model_name=yolo_weights)
-                else:
-                    out_img, dets = detect_image_pil(image, model_type="fasterrcnn", conf=conf)
-                st.subheader("Detections")
-                st.image(out_img, use_container_width=True)
-                st.json(dets)
-            except Exception as exc:
-                st.error(f"Detection failed: {exc}")
-    else:
-        st.info("이미지를 준비하세요.")
+                import cv2
+                import tempfile
 
-with video_det_tab:
-    st.subheader("Video Detection")
-    st.caption("MP4 업로드 후 프레임 단위 객체 탐지 데모.")
-    from Easy_Deep_Learning.core.detection import detect_video_bytes
-    vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
-    model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_video_model")
-    conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_video_conf")
-    frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
-    max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
-    yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_video_weights")
-
-    if vid:
-        if st.button("Run Video Detection", type="primary", key="det_video_run"):
-            try:
-                frames, dets = detect_video_bytes(
-                    video_bytes=vid.read(),
-                    model_type="yolo" if model_choice.startswith("YOLO") else "fasterrcnn",
-                    conf=conf,
-                    model_name=yolo_weights,
-                    frame_stride=int(frame_stride),
-                    max_frames=int(max_frames),
-                )
-                st.subheader("Detected Frames")
-                if frames:
-                    st.image(frames, width=180)
-                st.subheader("Detections (sample)")
-                st.json(dets[:3])
+                h, w = 240, 320
+                fps = 12
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+                writer = cv2.VideoWriter(tmp.name, fourcc, fps, (w, h))
+                for i in range(60):
+                    frame = np.zeros((h, w, 3), dtype=np.uint8)
+                    cx = int((i / 59) * (w - 40))
+                    cy = int((i / 59) * (h - 40))
+                    frame[cy:cy+40, cx:cx+40, :] = (0, 255, 0)
+                    writer.write(frame)
+                writer.release()
+                vid_bytes = Path(tmp.name).read_bytes()
+                vid = type("obj", (), {"read": lambda self: vid_bytes})()
             except Exception as exc:
-                st.error(f"Video detection failed: {exc}")
-    else:
-        st.info("비디오를 업로드하세요.")
+                st.error(f"Built-in video failed: {exc}")
+
+        if vid:
+            if st.button("Run Video Detection", type="primary", key="det_video_run"):
+                try:
+                    frames, dets = detect_video_bytes(
+                        video_bytes=vid.read(),
+                        model_type="yolo" if model_choice.startswith("YOLO") else "fasterrcnn",
+                        conf=conf,
+                        model_name=yolo_weights,
+                        frame_stride=int(frame_stride),
+                        max_frames=int(max_frames),
+                    )
+                    st.subheader("Detected Frames")
+                    if frames:
+                        st.image(frames, width=180)
+                    st.subheader("Detections (sample)")
+                    st.json(dets[:3])
+                except Exception as exc:
+                    st.error(f"Video detection failed: {exc}")
+        else:
+            st.info("비디오를 업로드하세요.")
 
 with agent_tab:
     st.subheader("Tool-Using Agent")
