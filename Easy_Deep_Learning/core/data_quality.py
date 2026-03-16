@@ -48,6 +48,15 @@ def compute_data_quality(df: pd.DataFrame, target_column: str | None = None) -> 
                 "imbalance_ratio": ratio,
             }
 
+    warnings = []
+    if duplicate_rows > 0:
+        warnings.append(f"Found {duplicate_rows} duplicate rows.")
+    if sum(missing.values()) > 0:
+        warnings.append("Missing values detected.")
+    if target_summary.get("type") == "categorical":
+        if target_summary.get("imbalance_ratio", 0) >= 10:
+            warnings.append("Target class imbalance is high.")
+
     return {
         "rows": int(len(df)),
         "columns": int(len(df.columns)),
@@ -55,4 +64,5 @@ def compute_data_quality(df: pd.DataFrame, target_column: str | None = None) -> 
         "duplicates": duplicate_rows,
         "outliers": outliers,
         "target_summary": target_summary,
+        "warnings": warnings,
     }

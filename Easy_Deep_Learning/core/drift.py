@@ -49,7 +49,16 @@ def compute_drift(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, An
             psi += (a - e) * np.log(a / e)
         cat_drift[col] = float(psi)
 
+    warnings = []
+    high_numeric = [k for k, v in numeric_drift.items() if v >= 0.2]
+    high_cat = [k for k, v in cat_drift.items() if v >= 0.2]
+    if high_numeric:
+        warnings.append(f"High numeric drift: {', '.join(high_numeric[:5])}")
+    if high_cat:
+        warnings.append(f"High categorical drift: {', '.join(high_cat[:5])}")
+
     return {
         "numeric_psi": numeric_drift,
         "categorical_psi": cat_drift,
+        "warnings": warnings,
     }

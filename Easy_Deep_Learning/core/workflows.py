@@ -29,6 +29,7 @@ from Easy_Deep_Learning.core.recommendations import generate_model_recommendatio
 from Easy_Deep_Learning.core.tuning import run_auto_tuning
 from Easy_Deep_Learning.core.data_quality import compute_data_quality
 from Easy_Deep_Learning.core.drift import compute_drift
+from Easy_Deep_Learning.core.cv import run_cross_validation
 from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -285,6 +286,36 @@ def train_and_save(
     generate_model_recommendations(run_path)
     generate_html_report(run_path)
     return RunResult(run_id=run_id, run_path=run_path, metrics=model_result.metrics)
+
+
+def cross_validate_and_report(
+    data_path: Path,
+    target_column: str,
+    task_type: str,
+    model_type: str,
+    seed: int,
+    folds: int = 5,
+    model_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    df = pd.read_csv(data_path)
+    result = run_cross_validation(
+        df=df,
+        target_column=target_column,
+        task_type=task_type,
+        model_type=model_type,
+        seed=seed,
+        model_params=model_params,
+        folds=folds,
+    )
+    payload = {
+        "model_type": model_type,
+        "task_type": task_type,
+        "folds": folds,
+        "metrics": result.metrics,
+        "scores": result.scores,
+        "mean_metrics": result.mean_metrics,
+    }
+    return payload
 
 
 def auto_tune_and_train(

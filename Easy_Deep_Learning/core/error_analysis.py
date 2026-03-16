@@ -187,11 +187,16 @@ def generate_error_analysis(
                 try:
                     import shap
 
-                    first_vals = shap_vals[0]
                     base = np.mean(shap_vals, axis=0)
-                    html = shap.force_plot(base, first_vals, feature_names=feature_names, matplotlib=False)
-                    shap.save_html(str(run_path / "force_plot.html"), html)
-                    payload["force_plot"] = "force_plot.html"
+                    force_paths = []
+                    for j, row in enumerate(payload["top_errors"]):
+                        idx = row["index"]
+                        vals = shap_vals[j]
+                        html = shap.force_plot(base, vals, feature_names=feature_names, matplotlib=False)
+                        fname = f"force_plot_{idx}.html"
+                        shap.save_html(str(run_path / fname), html)
+                        force_paths.append(fname)
+                    payload["force_plots"] = force_paths
                 except Exception:
                     pass
 

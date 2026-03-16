@@ -112,6 +112,15 @@ def build_parser() -> argparse.ArgumentParser:
     compare = subparsers.add_parser("compare", help="Compare multiple runs and generate a report")
     compare.add_argument("--run-ids", type=str, required=True, help="Comma-separated run IDs")
 
+    cv = subparsers.add_parser("cv", help="Run cross-validation report")
+    cv.add_argument("--data", type=Path, required=True, help="Training CSV path")
+    cv.add_argument("--target-column", type=str, required=True, help="Target column name")
+    cv.add_argument("--task-type", choices=["classification", "regression"], required=True)
+    cv.add_argument("--model-type", choices=["dnn", "xgboost", "rf", "svm", "knn", "lr", "gbm"], required=True)
+    cv.add_argument("--seed", type=int, default=42)
+    cv.add_argument("--folds", type=int, default=5)
+    cv.add_argument("--model-params", type=str, default="{}")
+
     return parser
 
 
@@ -305,6 +314,25 @@ def main() -> None:
 
         run_ids = [rid.strip() for rid in args.run_ids.split(",") if rid.strip()]
         payload = generate_compare_report(run_ids)
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "cv":
+        from Easy_Deep_Learning.core.workflows import cross_validate_and_report
+        try:
+            model_params = json.loads(args.model_params)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid --model-params JSON: {exc}") from exc
+
+        payload = cross_validate_and_report(
+            data_path=args.data,
+            target_column=args.target_column,
+            task_type=args.task_type,
+            model_type=args.model_type,
+            seed=args.seed,
+            folds=args.folds,
+            model_params=model_params,
+        )
         print(json.dumps(payload, indent=2))
         return
 

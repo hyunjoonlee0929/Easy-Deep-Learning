@@ -306,12 +306,20 @@ def show_run_artifacts(run_path: Path) -> None:
     quality_path = run_path / "data_quality.json"
     if quality_path.exists():
         st.subheader("Data Quality")
-        st.json(json.loads(quality_path.read_text(encoding="utf-8")))
+        quality_payload = json.loads(quality_path.read_text(encoding="utf-8"))
+        warnings = quality_payload.get("warnings", [])
+        if warnings:
+            st.warning(" | ".join(warnings))
+        st.json(quality_payload)
 
     drift_path = run_path / "drift_report.json"
     if drift_path.exists():
         st.subheader("Drift Report")
-        st.json(json.loads(drift_path.read_text(encoding="utf-8")))
+        drift_payload = json.loads(drift_path.read_text(encoding="utf-8"))
+        warnings = drift_payload.get("warnings", [])
+        if warnings:
+            st.warning(" | ".join(warnings))
+        st.json(drift_payload)
 
     uncertainty_path = run_path / "uncertainty.json"
     if uncertainty_path.exists():
@@ -416,6 +424,13 @@ def show_run_artifacts(run_path: Path) -> None:
         st.subheader("SHAP Force Plot (HTML)")
         with force_plot_path.open("r", encoding="utf-8") as f:
             st.components.v1.html(f.read(), height=400, scrolling=True)
+
+    force_plot_paths = sorted(run_path.glob("force_plot_*.html"))
+    if force_plot_paths:
+        st.subheader("SHAP Force Plots (Errors)")
+        for path in force_plot_paths[:5]:
+            with path.open("r", encoding="utf-8") as f:
+                st.components.v1.html(f.read(), height=280, scrolling=True)
 
     img_paths = sorted([p for p in run_path.glob("*.png")])
     if img_paths:
@@ -545,6 +560,28 @@ with tabular_tab:
                         cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
                     st.code(str(result.run_path.resolve()))
                     show_run_artifacts(result.run_path)
+
+                st.subheader("Cross Validation")
+                cv_folds = st.number_input("CV folds", min_value=3, max_value=10, value=5, step=1, key="tab_cv_folds")
+                if st.button("Run Cross-Validation", type="secondary", key="tab_cv_run"):
+                    from Easy_Deep_Learning.core.workflows import cross_validate_and_report
+
+                    tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                    train_df.to_csv(tmp_train_path, index=False)
+                    with st.spinner("Cross-validation running..."):
+                        cv_result = cross_validate_and_report(
+                            data_path=tmp_train_path,
+                            target_column=target_col,
+                            task_type=task_type,
+                            model_type=model_type,
+                            seed=int(seed),
+                            folds=int(cv_folds),
+                            model_params=params,
+                        )
+                    st.subheader("CV Mean Metrics")
+                    st.json(cv_result.get("mean_metrics", {}))
+                    st.subheader("CV Metrics per Fold")
+                    st.dataframe(pd.DataFrame(cv_result.get("metrics", [])), use_container_width=True)
 
                 st.subheader("AutoML Leaderboard")
                 max_models = st.number_input("Max models", min_value=2, max_value=10, value=6, step=1, key="tab_automl_max")
