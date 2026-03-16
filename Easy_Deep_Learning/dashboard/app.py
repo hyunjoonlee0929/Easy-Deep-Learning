@@ -495,12 +495,14 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-tabular_tab, image_tab, text_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
+tabular_tab, image_tab, text_tab, audio_tab, video_tab, image_det_tab, video_det_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
     "Tabular",
     "Image Models",
     "Text Models",
     "Audio Demo",
     "Video Demo",
+    "Image Detection",
+    "Video Detection",
     "Agent",
     "RAG",
     "Multimodal",
@@ -1187,6 +1189,86 @@ with video_tab:
             st.metric("Video Demo Prediction", label)
     else:
         st.info("프레임을 업로드하세요.")
+
+with image_det_tab:
+    st.subheader("Image Detection")
+    st.caption("대표 데이터셋 샘플 또는 이미지 업로드로 객체 탐지 데모.")
+    from Easy_Deep_Learning.core.detection import detect_image_pil
+    from PIL import Image
+
+    det_data_dir = st.text_input("Detection dataset cache dir", value="/tmp/easy_dl", key="det_cache")
+    det_source = st.selectbox("Data source", options=["Upload Image", "VOC (download)", "COCO (download)"], key="det_source")
+    image = None
+    if det_source == "Upload Image":
+        up = st.file_uploader("Upload image", type=["png", "jpg", "jpeg"], key="det_upload")
+        if up:
+            image = Image.open(up).convert("RGB")
+    elif det_source == "VOC (download)":
+        try:
+            import torchvision
+            ds = torchvision.datasets.VOCDetection(root=det_data_dir, year="2007", image_set="val", download=True)
+            image, _ = ds[0]
+        except Exception as exc:
+            st.error(f"VOC load failed: {exc}")
+    else:
+        try:
+            import torchvision
+            ds = torchvision.datasets.CocoDetection(root=det_data_dir, annFile=str(Path(det_data_dir)/'annotations/instances_val2017.json'))
+            image, _ = ds[0]
+        except Exception as exc:
+            st.error(f"COCO load failed: {exc}")
+
+    model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_model")
+    conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_conf")
+    yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_weights")
+
+    if image is not None:
+        st.image(image, caption="Input", use_container_width=True)
+        if st.button("Run Detection", type="primary", key="det_run"):
+            try:
+                if model_choice.startswith("YOLO"):
+                    out_img, dets = detect_image_pil(image, model_type="yolo", conf=conf, model_name=yolo_weights)
+                else:
+                    out_img, dets = detect_image_pil(image, model_type="fasterrcnn", conf=conf)
+                st.subheader("Detections")
+                st.image(out_img, use_container_width=True)
+                st.json(dets)
+            except Exception as exc:
+                st.error(f"Detection failed: {exc}")
+    else:
+        st.info("이미지를 준비하세요.")
+
+with video_det_tab:
+    st.subheader("Video Detection")
+    st.caption("MP4 업로드 후 프레임 단위 객체 탐지 데모.")
+    from Easy_Deep_Learning.core.detection import detect_video_bytes
+    vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
+    model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_video_model")
+    conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_video_conf")
+    frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
+    max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
+    yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_video_weights")
+
+    if vid:
+        if st.button("Run Video Detection", type="primary", key="det_video_run"):
+            try:
+                frames, dets = detect_video_bytes(
+                    video_bytes=vid.read(),
+                    model_type="yolo" if model_choice.startswith("YOLO") else "fasterrcnn",
+                    conf=conf,
+                    model_name=yolo_weights,
+                    frame_stride=int(frame_stride),
+                    max_frames=int(max_frames),
+                )
+                st.subheader("Detected Frames")
+                if frames:
+                    st.image(frames, width=180)
+                st.subheader("Detections (sample)")
+                st.json(dets[:3])
+            except Exception as exc:
+                st.error(f"Video detection failed: {exc}")
+    else:
+        st.info("비디오를 업로드하세요.")
 
 with agent_tab:
     st.subheader("Tool-Using Agent")
