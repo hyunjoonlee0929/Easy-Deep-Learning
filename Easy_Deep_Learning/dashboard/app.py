@@ -1030,15 +1030,47 @@ with audio_tab:
     built_in = st.selectbox("Built-in sample", options=["Sine 440Hz", "Sine 880Hz"], key="audio_builtin")
     uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
     recorded = None
+    webrtc_signal = None
     if hasattr(st, "audio_input"):
         recorded = st.audio_input("Record audio (optional)", key="audio_record")
     else:
-        st.info("이 Streamlit 버전은 audio_input을 지원하지 않습니다. WAV 업로드로 대체하세요.")
+        st.info("이 Streamlit 버전은 audio_input을 지원하지 않습니다. 웹 녹음 컴포넌트를 시도합니다.")
+        try:
+            from streamlit_webrtc import webrtc_streamer, WebRtcMode
+            import av
+
+            class AudioProcessor:
+                def __init__(self) -> None:
+                    self.frames: list[np.ndarray] = []
+
+                def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+                    pcm = frame.to_ndarray()
+                    self.frames.append(pcm)
+                    return frame
+
+            ctx = webrtc_streamer(
+                key="audio_webrtc",
+                mode=WebRtcMode.SENDONLY,
+                audio_receiver_size=256,
+                media_stream_constraints={"audio": True, "video": False},
+                async_processing=True,
+                audio_processor_factory=AudioProcessor,
+            )
+            if ctx and ctx.audio_processor and ctx.audio_processor.frames:
+                pcm = np.concatenate(ctx.audio_processor.frames, axis=1).flatten()
+                pcm = pcm.astype(np.float32)
+                pcm /= np.max(np.abs(pcm)) + 1e-9
+                webrtc_signal = pcm
+        except Exception as exc:
+            st.info(f"웹 녹음 컴포넌트를 사용할 수 없습니다: {exc}")
     sr = 16000
     if uploaded:
         signal, sr = load_wav_bytes(uploaded.read())
     elif recorded:
         signal, sr = load_wav_bytes(recorded.getvalue())
+    elif webrtc_signal is not None:
+        signal = webrtc_signal
+        sr = 16000
     else:
         freq = 440.0 if built_in == "Sine 440Hz" else 880.0
         signal = generate_sine_wave(freq=freq, duration=1.0, sr=sr)
