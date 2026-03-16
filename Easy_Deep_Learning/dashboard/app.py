@@ -1068,8 +1068,20 @@ with audio_tab:
                 pcm = pcm.astype(np.float32)
                 pcm /= np.max(np.abs(pcm)) + 1e-9
                 webrtc_signal = pcm
-                webrtc_wav = write_wav_bytes(webrtc_signal, sr=16000)
-                st.session_state["webrtc_wav"] = webrtc_wav
+
+            col_rec_1, col_rec_2 = st.columns(2)
+            with col_rec_1:
+                if st.button("Save Recording", key="save_webrtc"):
+                    if webrtc_signal is not None:
+                        webrtc_wav = write_wav_bytes(webrtc_signal, sr=16000)
+                        st.session_state["webrtc_wav"] = webrtc_wav
+                        st.success("녹음이 저장되었습니다.")
+                    else:
+                        st.warning("저장할 녹음이 없습니다.")
+            with col_rec_2:
+                if st.button("Clear Recording", key="clear_webrtc"):
+                    st.session_state.pop("webrtc_wav", None)
+                    webrtc_wav = None
         except Exception as exc:
             st.info(f"웹 녹음 컴포넌트를 사용할 수 없습니다: {exc}")
     sr = 16000
