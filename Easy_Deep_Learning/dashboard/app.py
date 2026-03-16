@@ -930,9 +930,21 @@ with image_tab:
         from PIL import Image
 
         det_data_dir = st.text_input("Detection dataset cache dir", value="/tmp/easy_dl", key="det_cache")
-        det_source = st.selectbox("Data source", options=["Upload Image", "VOC (download)", "COCO (download)"], key="det_source")
+        det_source = st.selectbox(
+            "Data source",
+            options=["Built-in Samples", "Upload Image", "VOC (download)", "COCO (download)"],
+            key="det_source",
+        )
         image = None
-        if det_source == "Upload Image":
+        if det_source == "Built-in Samples":
+            sample_dir = Path("Easy_Deep_Learning/data/image_samples")
+            sample_files = sorted(sample_dir.glob("*.png"))
+            if sample_files:
+                sel = st.selectbox("Sample image", options=[p.name for p in sample_files], key="det_sample")
+                image = Image.open(sample_dir / sel).convert("RGB")
+            else:
+                st.info("샘플 이미지가 없습니다.")
+        elif det_source == "Upload Image":
             up = st.file_uploader("Upload image", type=["png", "jpg", "jpeg"], key="det_upload")
             if up:
                 image = Image.open(up).convert("RGB")
@@ -943,13 +955,20 @@ with image_tab:
                 image, _ = ds[0]
             except Exception as exc:
                 st.error(f"VOC load failed: {exc}")
+                st.info("Built-in Samples로 전환해 테스트하세요.")
         else:
             try:
                 import torchvision
+                try:
+                    import pycocotools  # noqa: F401
+                except Exception as exc:
+                    st.error(f"COCO requires pycocotools: {exc}")
+                    raise
                 ds = torchvision.datasets.CocoDetection(root=det_data_dir, annFile=str(Path(det_data_dir)/'annotations/instances_val2017.json'))
                 image, _ = ds[0]
             except Exception as exc:
                 st.error(f"COCO load failed: {exc}")
+                st.info("Built-in Samples로 전환해 테스트하세요.")
 
         model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_model")
         conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_conf")
@@ -1286,6 +1305,7 @@ with video_tab:
                 vid = type("obj", (), {"read": lambda self: vid_bytes})()
             except Exception as exc:
                 st.error(f"Built-in video failed: {exc}")
+                st.info("OpenCV 설치가 필요합니다: pip install opencv-python")
 
         if vid:
             if st.button("Run Video Detection", type="primary", key="det_video_run"):
