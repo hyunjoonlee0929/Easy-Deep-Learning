@@ -1029,7 +1029,11 @@ with audio_tab:
 
     built_in = st.selectbox("Built-in sample", options=["Sine 440Hz", "Sine 880Hz"], key="audio_builtin")
     uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
-    recorded = st.audio_input("Record audio (optional)", key="audio_record")
+    recorded = None
+    if hasattr(st, "audio_input"):
+        recorded = st.audio_input("Record audio (optional)", key="audio_record")
+    else:
+        st.info("이 Streamlit 버전은 audio_input을 지원하지 않습니다. WAV 업로드로 대체하세요.")
     sr = 16000
     if uploaded:
         signal, sr = load_wav_bytes(uploaded.read())
