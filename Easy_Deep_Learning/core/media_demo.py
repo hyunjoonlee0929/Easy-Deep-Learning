@@ -29,6 +29,19 @@ def load_wav_bytes(data: bytes) -> tuple[np.ndarray, int]:
         return audio, sr
 
 
+def write_wav_bytes(signal: np.ndarray, sr: int = 16000) -> bytes:
+    signal = np.asarray(signal, dtype=np.float32)
+    signal = np.clip(signal, -1.0, 1.0)
+    pcm = (signal * 32767).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
 def audio_features(signal: np.ndarray, sr: int) -> dict[str, float]:
     if signal.size == 0:
         return {}

@@ -1022,7 +1022,7 @@ with text_tab:
 with audio_tab:
     st.subheader("Audio Demo (WAV)")
     st.caption("Built-in sine wave or WAV upload. Feature extraction + ASR + demo classifier.")
-    from Easy_Deep_Learning.core.media_demo import generate_sine_wave, load_wav_bytes, audio_features, build_audio_dataset
+    from Easy_Deep_Learning.core.media_demo import generate_sine_wave, load_wav_bytes, write_wav_bytes, audio_features, build_audio_dataset
     from Easy_Deep_Learning.core.asr import compute_wer, compute_cer, transcribe_openai
     import matplotlib.pyplot as plt
     from sklearn.ensemble import RandomForestClassifier
@@ -1031,6 +1031,7 @@ with audio_tab:
     uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
     recorded = None
     webrtc_signal = None
+    webrtc_wav = None
     if hasattr(st, "audio_input"):
         recorded = st.audio_input("Record audio (optional)", key="audio_record")
     else:
@@ -1061,6 +1062,7 @@ with audio_tab:
                 pcm = pcm.astype(np.float32)
                 pcm /= np.max(np.abs(pcm)) + 1e-9
                 webrtc_signal = pcm
+                webrtc_wav = write_wav_bytes(webrtc_signal, sr=16000)
         except Exception as exc:
             st.info(f"웹 녹음 컴포넌트를 사용할 수 없습니다: {exc}")
     sr = 16000
@@ -1085,11 +1087,16 @@ with audio_tab:
     feats = audio_features(signal, sr)
     st.json(feats)
 
+    if webrtc_wav is not None:
+        st.subheader("Recorded Audio")
+        st.audio(webrtc_wav, format="audio/wav")
+        st.download_button("Download recording", data=webrtc_wav, file_name="recording.wav", mime="audio/wav")
+
     st.subheader("ASR (Speech → Text)")
     ref_text = st.text_input("Reference text (optional)", value="", key="asr_ref")
     if st.button("Transcribe Audio", type="secondary"):
         try:
-            audio_bytes = uploaded.read() if uploaded else (recorded.getvalue() if recorded else None)
+            audio_bytes = uploaded.read() if uploaded else (recorded.getvalue() if recorded else (webrtc_wav if webrtc_wav is not None else None))
             if audio_bytes is None:
                 st.error("WAV 파일을 업로드하거나 녹음하세요.")
             else:
