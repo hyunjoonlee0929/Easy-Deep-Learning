@@ -49,13 +49,16 @@ def compute_data_quality(df: pd.DataFrame, target_column: str | None = None) -> 
             }
 
     warnings = []
+    missing_total = int(sum(missing.values()))
+    missing_rate = float(missing_total / max(1, df.size))
     if duplicate_rows > 0:
-        warnings.append(f"Found {duplicate_rows} duplicate rows.")
-    if sum(missing.values()) > 0:
-        warnings.append("Missing values detected.")
+        warnings.append({"level": "warning", "message": f"Found {duplicate_rows} duplicate rows."})
+    if missing_total > 0:
+        level = "critical" if missing_rate >= 0.1 else "warning"
+        warnings.append({"level": level, "message": f"Missing values detected ({missing_rate:.2%})."})
     if target_summary.get("type") == "categorical":
         if target_summary.get("imbalance_ratio", 0) >= 10:
-            warnings.append("Target class imbalance is high.")
+            warnings.append({"level": "warning", "message": "Target class imbalance is high."})
 
     return {
         "rows": int(len(df)),
@@ -64,5 +67,6 @@ def compute_data_quality(df: pd.DataFrame, target_column: str | None = None) -> 
         "duplicates": duplicate_rows,
         "outliers": outliers,
         "target_summary": target_summary,
+        "missing_rate": missing_rate,
         "warnings": warnings,
     }

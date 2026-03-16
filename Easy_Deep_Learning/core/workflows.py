@@ -318,6 +318,37 @@ def cross_validate_and_report(
     return payload
 
 
+def save_cv_report(payload: dict[str, Any]) -> Path:
+    tracker = ExperimentTracker(base_dir=Path("runs"))
+    run_id, run_path = tracker.create_run(model_type="cv")
+    tracker.save_json(run_path / "cv_report.json", payload)
+
+    html_rows = []
+    for i, metrics in enumerate(payload.get("metrics", [])):
+        html_rows.append(
+            "<tr>"
+            f"<td>{i+1}</td>"
+            f"<td><pre>{json.dumps(metrics, indent=2)}</pre></td>"
+            "</tr>"
+        )
+    html = (
+        "<html><body>"
+        "<h1>Cross Validation Report</h1>"
+        f"<div>Run ID: {run_id}</div>"
+        f"<div>Model: {payload.get('model_type')}</div>"
+        f"<div>Task: {payload.get('task_type')}</div>"
+        f"<div>Folds: {payload.get('folds')}</div>"
+        f"<div>Mean Metrics: <pre>{json.dumps(payload.get('mean_metrics', {}), indent=2)}</pre></div>"
+        "<table border='1' cellpadding='6' cellspacing='0'>"
+        "<tr><th>Fold</th><th>Metrics</th></tr>"
+        + "".join(html_rows)
+        + "</table>"
+        "</body></html>"
+    )
+    (run_path / "cv_report.html").write_text(html, encoding="utf-8")
+    return run_path
+
+
 def auto_tune_and_train(
     data_path: Path,
     config_path: Path,

@@ -309,7 +309,15 @@ def show_run_artifacts(run_path: Path) -> None:
         quality_payload = json.loads(quality_path.read_text(encoding="utf-8"))
         warnings = quality_payload.get("warnings", [])
         if warnings:
-            st.warning(" | ".join(warnings))
+            for warn in warnings:
+                level = warn.get("level", "warning")
+                msg = warn.get("message", "")
+                if level == "critical":
+                    st.error(msg)
+                elif level == "warning":
+                    st.warning(msg)
+                else:
+                    st.info(msg)
         st.json(quality_payload)
 
     drift_path = run_path / "drift_report.json"
@@ -318,7 +326,15 @@ def show_run_artifacts(run_path: Path) -> None:
         drift_payload = json.loads(drift_path.read_text(encoding="utf-8"))
         warnings = drift_payload.get("warnings", [])
         if warnings:
-            st.warning(" | ".join(warnings))
+            for warn in warnings:
+                level = warn.get("level", "warning")
+                msg = warn.get("message", "")
+                if level == "critical":
+                    st.error(msg)
+                elif level == "warning":
+                    st.warning(msg)
+                else:
+                    st.info(msg)
         st.json(drift_payload)
 
     uncertainty_path = run_path / "uncertainty.json"
@@ -427,10 +443,16 @@ def show_run_artifacts(run_path: Path) -> None:
 
     force_plot_paths = sorted(run_path.glob("force_plot_*.html"))
     if force_plot_paths:
-        st.subheader("SHAP Force Plots (Errors)")
-        for path in force_plot_paths[:5]:
-            with path.open("r", encoding="utf-8") as f:
-                st.components.v1.html(f.read(), height=280, scrolling=True)
+        st.subheader("SHAP Force Plot Gallery")
+        selected_force = st.selectbox(
+            "Select force plot",
+            options=[p.name for p in force_plot_paths],
+            key="force_plot_select",
+        )
+        sel_path = run_path / selected_force
+        if sel_path.exists():
+            with sel_path.open("r", encoding="utf-8") as f:
+                st.components.v1.html(f.read(), height=320, scrolling=True)
 
     img_paths = sorted([p for p in run_path.glob("*.png")])
     if img_paths:
@@ -564,7 +586,7 @@ with tabular_tab:
                 st.subheader("Cross Validation")
                 cv_folds = st.number_input("CV folds", min_value=3, max_value=10, value=5, step=1, key="tab_cv_folds")
                 if st.button("Run Cross-Validation", type="secondary", key="tab_cv_run"):
-                    from Easy_Deep_Learning.core.workflows import cross_validate_and_report
+                    from Easy_Deep_Learning.core.workflows import cross_validate_and_report, save_cv_report
 
                     tmp_train_path = Path("/tmp/easy_dl_train.csv")
                     train_df.to_csv(tmp_train_path, index=False)
@@ -578,10 +600,12 @@ with tabular_tab:
                             folds=int(cv_folds),
                             model_params=params,
                         )
+                        cv_run_path = save_cv_report(cv_result)
                     st.subheader("CV Mean Metrics")
                     st.json(cv_result.get("mean_metrics", {}))
                     st.subheader("CV Metrics per Fold")
                     st.dataframe(pd.DataFrame(cv_result.get("metrics", [])), use_container_width=True)
+                    st.code(str(cv_run_path.resolve()))
 
                 st.subheader("AutoML Leaderboard")
                 max_models = st.number_input("Max models", min_value=2, max_value=10, value=6, step=1, key="tab_automl_max")
