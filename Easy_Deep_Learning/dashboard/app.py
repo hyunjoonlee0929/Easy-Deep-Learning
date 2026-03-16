@@ -1029,7 +1029,15 @@ with audio_tab:
     import matplotlib.pyplot as plt
     from sklearn.ensemble import RandomForestClassifier
 
-    built_in = st.selectbox("Built-in sample", options=["Sine 440Hz", "Sine 880Hz"], key="audio_builtin")
+    samples_dir = Path("Easy_Deep_Learning/data/audio_samples")
+    built_in_files = []
+    if samples_dir.exists():
+        built_in_files = sorted([p.name for p in samples_dir.glob("*.wav")])
+    built_in = st.selectbox(
+        "Built-in sample",
+        options=["Sine 440Hz", "Sine 880Hz"] + built_in_files,
+        key="audio_builtin",
+    )
     uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
     recorded = None
     webrtc_signal = None
@@ -1094,6 +1102,9 @@ with audio_tab:
     elif webrtc_signal is not None:
         signal = webrtc_signal
         sr = 16000
+    elif built_in in built_in_files:
+        data = (samples_dir / built_in).read_bytes()
+        signal, sr = load_wav_bytes(data)
     else:
         freq = 440.0 if built_in == "Sine 440Hz" else 880.0
         signal = generate_sine_wave(freq=freq, duration=1.0, sr=sr)
