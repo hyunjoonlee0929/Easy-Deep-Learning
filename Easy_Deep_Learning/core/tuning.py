@@ -22,6 +22,7 @@ class TuneResult:
     best_params: dict[str, Any]
     best_metrics: dict[str, float]
     trials: list[dict[str, Any]]
+    scores: list[float]
 
 
 def _search_space(model_type: str, task_type: str) -> dict[str, list[Any]]:
@@ -89,6 +90,7 @@ def run_auto_tuning(
     sampler = ParameterSampler(space, n_iter=max_trials, random_state=seed)
 
     trials: list[dict[str, Any]] = []
+    scores: list[float] = []
     best_score = -1e9
     best_params: dict[str, Any] = {}
     best_metrics: dict[str, float] = {}
@@ -111,6 +113,7 @@ def run_auto_tuning(
             }
 
         score = score_metrics(task_type, metrics)
+        scores.append(float(score))
         trials.append({"params": params, "metrics": metrics, "score": score})
         if score > best_score:
             best_score = score
@@ -122,4 +125,5 @@ def run_auto_tuning(
         best_params=best_params,
         best_metrics=best_metrics,
         trials=trials,
+        scores=scores,
     )

@@ -41,10 +41,21 @@ def generate_compare_report(run_ids: list[str]) -> dict[str, Any]:
     else:
         rows_sorted = []
 
+    reason = ""
+    if best:
+        metrics = best.get("metrics", {})
+        task = best.get("task_type", "")
+        if task == "classification":
+            key = "f1_weighted" if "f1_weighted" in metrics else "accuracy"
+        else:
+            key = "r2"
+        reason = f"Best score on {key}: {metrics.get(key)} with model {best.get('model_type')}"
+
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "runs": rows_sorted,
         "best_run": best,
+        "reason": reason,
     }
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

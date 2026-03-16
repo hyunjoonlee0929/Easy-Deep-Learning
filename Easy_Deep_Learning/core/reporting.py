@@ -120,6 +120,9 @@ def generate_html_report(run_path: Path) -> Path:
     ai_report = _read_json(run_path / "ai_report.json") or {}
     recommendations = _read_json(run_path / "recommendations.json") or {}
     error_analysis = _read_json(run_path / "error_analysis.json") or {}
+    data_quality = _read_json(run_path / "data_quality.json") or {}
+    drift_report = _read_json(run_path / "drift_report.json") or {}
+    uncertainty = _read_json(run_path / "uncertainty.json") or {}
     has_cm = (run_path / "confusion_matrix.png").exists()
     has_roc = (run_path / "roc_curve.png").exists()
     has_scatter = (run_path / "prediction_scatter.png").exists()
@@ -175,6 +178,21 @@ def generate_html_report(run_path: Path) -> Path:
   <div class="section">
     <h2>AI Report</h2>
     <pre>{json.dumps(ai_report, indent=2, ensure_ascii=False)}</pre>
+  </div>
+
+  <div class="section">
+    <h2>Data Quality</h2>
+    <pre>{json.dumps(data_quality, indent=2, ensure_ascii=False)}</pre>
+  </div>
+
+  <div class="section">
+    <h2>Drift Report</h2>
+    <pre>{json.dumps(drift_report, indent=2, ensure_ascii=False)}</pre>
+  </div>
+
+  <div class="section">
+    <h2>Uncertainty</h2>
+    <pre>{json.dumps(uncertainty, indent=2, ensure_ascii=False)}</pre>
   </div>
 
   <div class="section">

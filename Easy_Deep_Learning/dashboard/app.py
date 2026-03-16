@@ -303,6 +303,21 @@ def show_run_artifacts(run_path: Path) -> None:
         with st.expander("All Recommendations", expanded=False):
             st.json(rec_payload)
 
+    quality_path = run_path / "data_quality.json"
+    if quality_path.exists():
+        st.subheader("Data Quality")
+        st.json(json.loads(quality_path.read_text(encoding="utf-8")))
+
+    drift_path = run_path / "drift_report.json"
+    if drift_path.exists():
+        st.subheader("Drift Report")
+        st.json(json.loads(drift_path.read_text(encoding="utf-8")))
+
+    uncertainty_path = run_path / "uncertainty.json"
+    if uncertainty_path.exists():
+        st.subheader("Uncertainty")
+        st.json(json.loads(uncertainty_path.read_text(encoding="utf-8")))
+
     best_params_path = run_path / "best_params.json"
     if best_params_path.exists():
         st.subheader("Best Params (Tuning)")
@@ -395,6 +410,19 @@ def show_run_artifacts(run_path: Path) -> None:
         st.subheader("Prediction Preview (saved)")
         pred = json.loads(pred_path.read_text(encoding="utf-8"))
         st.dataframe(pd.DataFrame(pred), use_container_width=True)
+
+    force_plot_path = run_path / "force_plot.html"
+    if force_plot_path.exists():
+        st.subheader("SHAP Force Plot (HTML)")
+        with force_plot_path.open("r", encoding="utf-8") as f:
+            st.components.v1.html(f.read(), height=400, scrolling=True)
+
+    img_paths = sorted([p for p in run_path.glob("*.png")])
+    if img_paths:
+        st.subheader("Artifacts Gallery")
+        cols = st.columns(3)
+        for i, path in enumerate(img_paths):
+            cols[i % 3].image(str(path), caption=path.name)
 
     leader_path = run_path / "leaderboard.json"
     if leader_path.exists():

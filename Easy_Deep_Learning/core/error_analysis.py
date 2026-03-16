@@ -182,6 +182,18 @@ def generate_error_analysis(
                         {"feature": feature_names[idx], "value": float(vals[idx])}
                         for idx in order
                     ]
+                    row["reason"] = "Top drivers: " + ", ".join([feature_names[idx] for idx in order])
+
+                try:
+                    import shap
+
+                    first_vals = shap_vals[0]
+                    base = np.mean(shap_vals, axis=0)
+                    html = shap.force_plot(base, first_vals, feature_names=feature_names, matplotlib=False)
+                    shap.save_html(str(run_path / "force_plot.html"), html)
+                    payload["force_plot"] = "force_plot.html"
+                except Exception:
+                    pass
 
         try:
             import matplotlib.pyplot as plt

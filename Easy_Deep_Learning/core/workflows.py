@@ -27,6 +27,8 @@ from Easy_Deep_Learning.core.explainability import generate_explainability_artif
 from Easy_Deep_Learning.core.error_analysis import generate_error_analysis
 from Easy_Deep_Learning.core.recommendations import generate_model_recommendations
 from Easy_Deep_Learning.core.tuning import run_auto_tuning
+from Easy_Deep_Learning.core.data_quality import compute_data_quality
+from Easy_Deep_Learning.core.drift import compute_drift
 from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -102,6 +104,7 @@ def train_and_save(
 
     validator = DataValidator()
     validation = validator.validate(df=df, target_column=target_column)
+    data_quality = compute_data_quality(df, target_column)
 
     resolved_model_type = model_type
     auto_choice: dict[str, Any] | None = None
@@ -215,6 +218,7 @@ def train_and_save(
 
     tracker.save_yaml(run_path / "config_snapshot.yaml", snapshot)
     tracker.save_json(run_path / "validation_report.json", validation.to_dict())
+    tracker.save_json(run_path / "data_quality.json", data_quality)
     tracker.save_json(run_path / "metrics.json", model_result.metrics)
     tracker.save_json(run_path / "feature_names.json", processed.feature_names)
     tracker.save_json(run_path / "model_params.json", params)
@@ -271,6 +275,11 @@ def train_and_save(
         )
     except Exception:
         pass
+    try:
+        drift = compute_drift(processed.X_train_raw, processed.X_test_raw)
+        tracker.save_json(run_path / "drift_report.json", drift)
+    except Exception:
+        pass
 
     generate_ai_report(run_path)
     generate_model_recommendations(run_path)
@@ -312,6 +321,19 @@ def auto_tune_and_train(
     tracker.save_json(result.run_path / "tuning_results.json", tune_result.trials)
     tracker.save_json(result.run_path / "best_params.json", tune_result.best_params)
     tracker.save_json(result.run_path / "best_metrics.json", tune_result.best_metrics)
+    try:
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(5, 3))
+        ax.plot(tune_result.scores, marker="o")
+        ax.set_title("Tuning Scores")
+        ax.set_xlabel("Trial")
+        ax.set_ylabel("Score")
+        fig.tight_layout()
+        fig.savefig(result.run_path / "tuning_scores.png", dpi=150)
+        plt.close(fig)
+    except Exception:
+        pass
     return result
 
 
@@ -436,6 +458,20 @@ def _save_prediction_artifacts(
                 plt.close(fig_roc)
         except Exception:
             pass
+
+        if hasattr(model, "predict_proba"):
+            try:
+                proba = model.predict_proba(X_infer)
+                confidence = np.max(proba, axis=1)
+                tracker.save_json(
+                    run_path / "uncertainty.json",
+                    {
+                        "type": "classification_confidence",
+                        "confidence": [float(v) for v in confidence[:200]],
+                    },
+                )
+            except Exception:
+                pass
     else:
         preview = {
             "y_true": [float(v) for v in np.asarray(y_test).ravel()[:50]],
@@ -453,6 +489,16 @@ def _save_prediction_artifacts(
             fig.tight_layout()
             fig.savefig(run_path / "prediction_scatter.png", dpi=150)
             plt.close(fig)
+        except Exception:
+            pass
+
+        try:
+            residuals = np.asarray(y_test).ravel() - np.asarray(y_pred_encoded).ravel()
+            res_std = float(np.std(residuals))
+            tracker.save_json(
+                run_path / "uncertainty.json",
+                {"type": "regression_residual_std", "residual_std": res_std},
+            )
         except Exception:
             pass
 
@@ -599,6 +645,7 @@ def test_from_run(
             )
         except Exception:
             pass
+        # drift requires train/test; skip for external test-only runs
         generate_ai_report(run_path)
         generate_model_recommendations(run_path)
         generate_html_report(run_path)
