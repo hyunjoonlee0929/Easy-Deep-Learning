@@ -1035,7 +1035,7 @@ with audio_tab:
     if hasattr(st, "audio_input"):
         recorded = st.audio_input("Record audio (optional)", key="audio_record")
     else:
-        st.info("이 Streamlit 버전은 audio_input을 지원하지 않습니다. 웹 녹음 컴포넌트를 시도합니다.")
+        st.info("이 Streamlit 버전은 audio_input을 지원하지 않습니다. 웹 녹음 컴포넌트를 사용합니다.")
         try:
             from streamlit_webrtc import webrtc_streamer, WebRtcMode
             import av
@@ -1043,10 +1043,12 @@ with audio_tab:
             class AudioProcessor:
                 def __init__(self) -> None:
                     self.frames: list[np.ndarray] = []
+                    self.is_recording = False
 
                 def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
                     pcm = frame.to_ndarray()
                     self.frames.append(pcm)
+                    self.is_recording = True
                     return frame
 
             ctx = webrtc_streamer(
@@ -1057,6 +1059,10 @@ with audio_tab:
                 async_processing=True,
                 audio_processor_factory=AudioProcessor,
             )
+            if ctx.state.playing:
+                st.success("녹음 중...")
+            else:
+                st.info("녹음을 시작하려면 Start를 누르세요.")
             if ctx and ctx.audio_processor and ctx.audio_processor.frames:
                 pcm = np.concatenate(ctx.audio_processor.frames, axis=1).flatten()
                 pcm = pcm.astype(np.float32)
