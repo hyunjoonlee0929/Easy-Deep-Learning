@@ -495,10 +495,12 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-tabular_tab, image_tab, text_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
+tabular_tab, image_tab, text_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
     "Tabular",
     "Image Models",
     "Text Models",
+    "Audio Demo",
+    "Video Demo",
     "Agent",
     "RAG",
     "Multimodal",
@@ -1016,6 +1018,55 @@ with text_tab:
             with st.spinner("Testing RNN..."):
                 result = test_rnn_text(selected_rnn, data_path=None)
             st.metric("test_accuracy", f"{result['test_accuracy']:.4f}")
+
+with audio_tab:
+    st.subheader("Audio Demo (WAV)")
+    st.caption("Built-in sine wave or WAV upload. Simple feature extraction demo.")
+    from Easy_Deep_Learning.core.media_demo import generate_sine_wave, load_wav_bytes, audio_features
+    import matplotlib.pyplot as plt
+
+    built_in = st.selectbox("Built-in sample", options=["Sine 440Hz", "Sine 880Hz"], key="audio_builtin")
+    uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
+    sr = 16000
+    if uploaded:
+        signal, sr = load_wav_bytes(uploaded.read())
+    else:
+        freq = 440.0 if built_in == "Sine 440Hz" else 880.0
+        signal = generate_sine_wave(freq=freq, duration=1.0, sr=sr)
+
+    st.subheader("Waveform")
+    fig, ax = plt.subplots(figsize=(6, 2))
+    ax.plot(signal[: min(len(signal), sr)])
+    ax.set_xlabel("Samples")
+    ax.set_ylabel("Amplitude")
+    st.pyplot(fig)
+    st.subheader("Audio Features")
+    st.json(audio_features(signal, sr))
+
+with video_tab:
+    st.subheader("Video Demo (Frame Sequence)")
+    st.caption("Built-in synthetic frames or multiple image upload as frames.")
+    from Easy_Deep_Learning.core.media_demo import generate_synthetic_video, video_features
+    from PIL import Image
+
+    use_builtin = st.checkbox("Use built-in synthetic video", value=True, key="video_builtin")
+    frames = []
+    if use_builtin:
+        frames = generate_synthetic_video()
+    else:
+        uploaded_imgs = st.file_uploader("Upload frames (multiple images)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="video_upload")
+        if uploaded_imgs:
+            for f in uploaded_imgs:
+                img = Image.open(f).convert("RGB")
+                frames.append(np.array(img))
+
+    if frames:
+        st.subheader("Frame Preview")
+        st.image(frames[:6], caption=[f"frame {i}" for i in range(min(6, len(frames)))], width=120)
+        st.subheader("Video Features")
+        st.json(video_features(frames))
+    else:
+        st.info("프레임을 업로드하세요.")
 
 with agent_tab:
     st.subheader("Tool-Using Agent")
