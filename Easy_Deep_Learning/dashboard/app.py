@@ -1031,7 +1031,7 @@ with audio_tab:
     uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
     recorded = None
     webrtc_signal = None
-    webrtc_wav = None
+    webrtc_wav = st.session_state.get("webrtc_wav")
     if hasattr(st, "audio_input"):
         recorded = st.audio_input("Record audio (optional)", key="audio_record")
     else:
@@ -1069,6 +1069,7 @@ with audio_tab:
                 pcm /= np.max(np.abs(pcm)) + 1e-9
                 webrtc_signal = pcm
                 webrtc_wav = write_wav_bytes(webrtc_signal, sr=16000)
+                st.session_state["webrtc_wav"] = webrtc_wav
         except Exception as exc:
             st.info(f"웹 녹음 컴포넌트를 사용할 수 없습니다: {exc}")
     sr = 16000
