@@ -72,3 +72,32 @@ def video_features(frames: list[np.ndarray]) -> dict[str, float]:
         "mean_intensity": float(np.mean(means)),
         "motion_energy": motion,
     }
+
+
+def build_audio_dataset(n: int = 200, sr: int = 16000) -> tuple[np.ndarray, np.ndarray]:
+    """Synthetic audio dataset: classify low vs high frequency."""
+    rng = np.random.default_rng(42)
+    X = []
+    y = []
+    for _ in range(n):
+        label = rng.integers(0, 2)
+        freq = rng.uniform(200, 400) if label == 0 else rng.uniform(600, 900)
+        signal = generate_sine_wave(freq=freq, duration=1.0, sr=sr)
+        feats = audio_features(signal, sr)
+        X.append([feats["rms"], feats["zcr"], feats["spectral_centroid"]])
+        y.append(label)
+    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.int64)
+
+
+def build_video_dataset(n: int = 200) -> tuple[np.ndarray, np.ndarray]:
+    """Synthetic video dataset: classify low vs high motion."""
+    rng = np.random.default_rng(42)
+    X = []
+    y = []
+    for _ in range(n):
+        label = rng.integers(0, 2)
+        frames = generate_synthetic_video(num_frames=12 if label == 0 else 20)
+        feats = video_features(frames)
+        X.append([feats["mean_intensity"], feats["motion_energy"], feats["num_frames"]])
+        y.append(label)
+    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.int64)

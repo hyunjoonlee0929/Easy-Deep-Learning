@@ -1021,15 +1021,20 @@ with text_tab:
 
 with audio_tab:
     st.subheader("Audio Demo (WAV)")
-    st.caption("Built-in sine wave or WAV upload. Simple feature extraction demo.")
-    from Easy_Deep_Learning.core.media_demo import generate_sine_wave, load_wav_bytes, audio_features
+    st.caption("Built-in sine wave or WAV upload. Feature extraction + ASR + demo classifier.")
+    from Easy_Deep_Learning.core.media_demo import generate_sine_wave, load_wav_bytes, audio_features, build_audio_dataset
+    from Easy_Deep_Learning.core.asr import compute_wer, compute_cer, transcribe_openai
     import matplotlib.pyplot as plt
+    from sklearn.ensemble import RandomForestClassifier
 
     built_in = st.selectbox("Built-in sample", options=["Sine 440Hz", "Sine 880Hz"], key="audio_builtin")
     uploaded = st.file_uploader("Upload WAV", type=["wav"], key="audio_upload")
+    recorded = st.audio_input("Record audio (optional)", key="audio_record")
     sr = 16000
     if uploaded:
         signal, sr = load_wav_bytes(uploaded.read())
+    elif recorded:
+        signal, sr = load_wav_bytes(recorded.getvalue())
     else:
         freq = 440.0 if built_in == "Sine 440Hz" else 880.0
         signal = generate_sine_wave(freq=freq, duration=1.0, sr=sr)
@@ -1041,13 +1046,52 @@ with audio_tab:
     ax.set_ylabel("Amplitude")
     st.pyplot(fig)
     st.subheader("Audio Features")
-    st.json(audio_features(signal, sr))
+    feats = audio_features(signal, sr)
+    st.json(feats)
+
+    st.subheader("ASR (Speech → Text)")
+    ref_text = st.text_input("Reference text (optional)", value="", key="asr_ref")
+    if st.button("Transcribe Audio", type="secondary"):
+        try:
+            audio_bytes = uploaded.read() if uploaded else (recorded.getvalue() if recorded else None)
+            if audio_bytes is None:
+                st.error("WAV 파일을 업로드하거나 녹음하세요.")
+            else:
+                text = transcribe_openai(audio_bytes)
+                st.session_state["asr_text"] = text
+                st.success("Transcription completed.")
+        except Exception as exc:
+            st.error(f"Transcription failed: {exc}")
+
+    if "asr_text" in st.session_state:
+        st.subheader("Transcription")
+        st.write(st.session_state["asr_text"])
+        if ref_text.strip():
+            wer = compute_wer(ref_text, st.session_state["asr_text"])
+            cer = compute_cer(ref_text, st.session_state["asr_text"])
+            st.metric("WER", f"{wer:.4f}")
+            st.metric("CER", f"{cer:.4f}")
+
+    st.subheader("Audio Classification Demo")
+    if st.button("Train Audio Demo Classifier", type="primary"):
+        X, y = build_audio_dataset()
+        clf = RandomForestClassifier(n_estimators=200, random_state=42)
+        clf.fit(X, y)
+        st.session_state["audio_clf"] = clf
+        st.success("Audio demo model trained.")
+
+    if "audio_clf" in st.session_state:
+        X_infer = np.array([[feats["rms"], feats["zcr"], feats["spectral_centroid"]]], dtype=np.float32)
+        pred = st.session_state["audio_clf"].predict(X_infer)[0]
+        label = "Low freq" if int(pred) == 0 else "High freq"
+        st.metric("Audio Demo Prediction", label)
 
 with video_tab:
     st.subheader("Video Demo (Frame Sequence)")
-    st.caption("Built-in synthetic frames or multiple image upload as frames.")
-    from Easy_Deep_Learning.core.media_demo import generate_synthetic_video, video_features
+    st.caption("Built-in synthetic frames or multiple image upload as frames. Feature extraction + demo classifier.")
+    from Easy_Deep_Learning.core.media_demo import generate_synthetic_video, video_features, build_video_dataset
     from PIL import Image
+    from sklearn.ensemble import RandomForestClassifier
 
     use_builtin = st.checkbox("Use built-in synthetic video", value=True, key="video_builtin")
     frames = []
@@ -1064,7 +1108,21 @@ with video_tab:
         st.subheader("Frame Preview")
         st.image(frames[:6], caption=[f"frame {i}" for i in range(min(6, len(frames)))], width=120)
         st.subheader("Video Features")
-        st.json(video_features(frames))
+        v_feats = video_features(frames)
+        st.json(v_feats)
+        st.subheader("Video Classification Demo")
+        if st.button("Train Video Demo Classifier", type="primary"):
+            X, y = build_video_dataset()
+            clf = RandomForestClassifier(n_estimators=200, random_state=42)
+            clf.fit(X, y)
+            st.session_state["video_clf"] = clf
+            st.success("Video demo model trained.")
+
+        if "video_clf" in st.session_state:
+            X_infer = np.array([[v_feats["mean_intensity"], v_feats["motion_energy"], v_feats["num_frames"]]], dtype=np.float32)
+            pred = st.session_state["video_clf"].predict(X_infer)[0]
+            label = "Low motion" if int(pred) == 0 else "High motion"
+            st.metric("Video Demo Prediction", label)
     else:
         st.info("프레임을 업로드하세요.")
 
