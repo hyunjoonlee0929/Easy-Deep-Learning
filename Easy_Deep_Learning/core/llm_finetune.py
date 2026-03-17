@@ -148,3 +148,44 @@ def finetune_llm_lora(
         run_path=run_path,
         metrics={k: float(v) for k, v in eval_metrics.items()},
     )
+
+
+def load_lora_model(run_path: Path):
+    """Load base model + LoRA adapter + tokenizer from a run folder."""
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    from peft import PeftModel
+
+    info = json.loads((Path(run_path) / "model_info.json").read_text(encoding="utf-8"))
+    base_model = info.get("model_name", "distilgpt2")
+    tokenizer = AutoTokenizer.from_pretrained(Path(run_path) / "tokenizer")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(base_model)
+    model = PeftModel.from_pretrained(model, Path(run_path) / "adapter")
+    model.eval()
+    return model, tokenizer
+
+
+def generate_with_lora(
+    run_path: Path,
+    prompt: str,
+    max_new_tokens: int = 128,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    do_sample: bool = True,
+) -> str:
+    """Generate text with a fine-tuned LoRA adapter."""
+    import torch
+
+    model, tokenizer = load_lora_model(run_path)
+    inputs = tokenizer(prompt, return_tensors="pt")
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=do_sample,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)

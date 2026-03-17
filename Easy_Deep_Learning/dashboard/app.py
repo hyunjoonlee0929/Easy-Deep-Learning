@@ -1406,6 +1406,32 @@ with finetune_tab:
                     st.json(result.metrics)
                     st.code(str(result.run_path.resolve()))
 
+            st.subheader("LLM Inference (LoRA)")
+            runs_dir = Path("runs")
+            llm_runs = sorted([p.name for p in runs_dir.iterdir() if p.is_dir() and p.name.endswith("_llm_finetune")], reverse=True) if runs_dir.exists() else []
+            llm_run = st.selectbox("LLM run_id", options=llm_runs, key="ft_llm_run_select")
+            prompt = st.text_area("Prompt", height=140, key="ft_llm_prompt")
+            max_new_tokens = st.number_input("Max new tokens", min_value=16, max_value=512, value=128, step=16, key="ft_llm_gen_len")
+            temperature = st.number_input("Temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1, key="ft_llm_temp")
+            top_p = st.number_input("Top-p", min_value=0.1, max_value=1.0, value=0.9, step=0.05, key="ft_llm_top_p")
+            if st.button("Generate", type="secondary", key="ft_llm_generate"):
+                if not llm_run:
+                    st.error("LLM run_id를 선택하세요.")
+                elif not prompt.strip():
+                    st.error("프롬프트를 입력하세요.")
+                else:
+                    from Easy_Deep_Learning.core.llm_finetune import generate_with_lora
+
+                    with st.spinner("Generating..."):
+                        output = generate_with_lora(
+                            run_path=Path("runs") / llm_run,
+                            prompt=prompt,
+                            max_new_tokens=int(max_new_tokens),
+                            temperature=float(temperature),
+                            top_p=float(top_p),
+                        )
+                    st.text_area("Output", value=output, height=200)
+
 with audio_tab:
     st.subheader("Audio Demo (WAV)")
     st.caption("Built-in sine wave or WAV upload. Feature extraction + ASR + demo classifier.")
