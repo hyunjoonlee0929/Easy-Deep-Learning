@@ -553,7 +553,7 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-tabular_tab, image_tab, text_tab, finetune_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
+tab_labels = [
     "Tabular",
     "Image",
     "Text Models",
@@ -565,7 +565,10 @@ tabular_tab, image_tab, text_tab, finetune_tab, audio_tab, video_tab, agent_tab,
     "Multimodal",
     "GitHub Summary",
     "Chatbot",
-])
+]
+tabular_tab, image_tab, text_tab, finetune_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs(
+    tab_labels
+)
 
 with tabular_tab:
     train_view, test_view, compare_view = st.tabs(["Train", "Test", "Compare"])
@@ -578,9 +581,22 @@ with tabular_tab:
             "모델/하이퍼파라미터 지정 후 학습 실행",
             "결과는 runs/ 폴더에 저장",
         ])
+        with st.expander("Quick Tabular Setup", expanded=False):
+            if st.button("Quick Classification", key="quick_tab_cls"):
+                st.session_state["train_source_default"] = "Preset Dataset"
+                st.session_state["train_preset_default"] = "Breast Cancer (classification)"
+                st.session_state["quick_task_type"] = "classification"
+                st.session_state["quick_model_type"] = "rf"
+                st.rerun()
+            if st.button("Quick Regression", key="quick_tab_reg"):
+                st.session_state["train_source_default"] = "Preset Dataset"
+                st.session_state["train_preset_default"] = "Diabetes (regression)"
+                st.session_state["quick_task_type"] = "regression"
+                st.session_state["quick_model_type"] = "gbm"
+                st.rerun()
         quick_defaults = quick_preset_state(quick_action)
         if quick_action in ["Quick Tabular Classification", "Quick Tabular Regression"]:
-            st.info("Quick preset applied. Data source set to Preset Dataset.")
+            st.info("Quick preset applied for Tabular. Data source set to Preset Dataset.")
             st.session_state["train_source_default"] = "Preset Dataset"
             st.session_state["train_preset_default"] = quick_defaults.get("preset")
 
@@ -604,7 +620,11 @@ with tabular_tab:
                 show_dataset_summary(train_df, target_col)
 
                 task_type_options = ["classification", "regression"]
-                task_default = task_type_options.index(quick_defaults.get("task_type")) if quick_defaults.get("task_type") in task_type_options else 0
+                quick_task = st.session_state.get("quick_task_type")
+                if quick_task in task_type_options:
+                    task_default = task_type_options.index(quick_task)
+                else:
+                    task_default = task_type_options.index(quick_defaults.get("task_type")) if quick_defaults.get("task_type") in task_type_options else 0
                 task_type = st.selectbox("Task type", options=task_type_options, index=task_default)
 
                 if task_type == "regression" and not pd.api.types.is_numeric_dtype(train_df[target_col]):
@@ -614,7 +634,11 @@ with tabular_tab:
                         st.warning("클래스 수가 많아 보입니다. 회귀 문제인지 확인하세요.")
 
                 model_options = ["auto", "dnn", "tab_transformer", "rf", "svm", "knn", "lr", "gbm", "xgboost"]
-                model_default = model_options.index(quick_defaults.get("model_type")) if quick_defaults.get("model_type") in model_options else 0
+                quick_model = st.session_state.get("quick_model_type")
+                if quick_model in model_options:
+                    model_default = model_options.index(quick_model)
+                else:
+                    model_default = model_options.index(quick_defaults.get("model_type")) if quick_defaults.get("model_type") in model_options else 0
                 model_type = st.selectbox("Model type", options=model_options, index=model_default)
                 seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="tab_seed")
 
@@ -916,17 +940,26 @@ with image_tab:
             "모델 아키텍처 및 학습 파라미터 설정",
             "학습 후 Test/Prediction으로 평가",
         ])
+        with st.expander("Quick Image Setup", expanded=False):
+            if st.button("Quick Image Demo", key="quick_img_demo"):
+                st.session_state["quick_image_dataset"] = "MNIST"
+                st.session_state["quick_image_arch"] = "cnn"
+                st.rerun()
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="img_cache")
 
         if not torch_available():
             st.info("Torch/torchvision이 설치되어 있지 않아 이미지 모델을 사용할 수 없습니다.")
         else:
             if quick_action == "Quick Image Models":
-                st.info("Quick Image Demo preset applied.")
+                st.info("Quick Image preset applied. If you set this from sidebar, open Image tab.")
             image_defaults = quick_preset_state(quick_action)
             with st.expander("Step 1: Dataset & Model", expanded=True):
                 dataset_options = ["MNIST", "FashionMNIST", "CIFAR10", "SVHN", "EMNIST"]
-                dataset_default = dataset_options.index(image_defaults.get("image_dataset")) if image_defaults.get("image_dataset") in dataset_options else 0
+                quick_image_dataset = st.session_state.get("quick_image_dataset")
+                if quick_image_dataset in dataset_options:
+                    dataset_default = dataset_options.index(quick_image_dataset)
+                else:
+                    dataset_default = dataset_options.index(image_defaults.get("image_dataset")) if image_defaults.get("image_dataset") in dataset_options else 0
                 dataset = st.selectbox(
                     "Dataset",
                     options=dataset_options,
@@ -945,7 +978,11 @@ with image_tab:
                 "vit_l_16",
                 "custom",
             ]
-            arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
+            quick_image_arch = st.session_state.get("quick_image_arch")
+            if quick_image_arch in arch_options:
+                arch_default = arch_options.index(quick_image_arch)
+            else:
+                arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
             model_arch = st.selectbox("Model architecture", options=arch_options, index=arch_default, key="img_arch")
             if model_arch == "custom":
                 model_arch = st.text_input("Custom torchvision model name", value="resnet50", key="img_arch_custom")
@@ -1161,13 +1198,22 @@ with text_tab:
             "Text/Label 컬럼 지정",
             "전처리 옵션과 모델 아키텍처 설정",
         ])
+        with st.expander("Quick Text Setup", expanded=False):
+            if st.button("Quick Text Demo", key="quick_text_demo"):
+                st.session_state["quick_text_dataset"] = "SST2_SAMPLE"
+                st.session_state["quick_text_arch"] = "gru"
+                st.rerun()
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="txt_cache")
 
         text_defaults = quick_preset_state(quick_action)
         if quick_action == "Quick Text Models":
-            st.info("Quick Text Demo preset applied.")
+            st.info("Quick Text preset applied. If you set this from sidebar, open Text tab.")
         text_options = ["AG_NEWS_SAMPLE", "SST2_SAMPLE", "TREC_SAMPLE", "Upload CSV"]
-        text_default = text_options.index(text_defaults.get("text_dataset")) if text_defaults.get("text_dataset") in text_options else 0
+        quick_text_dataset = st.session_state.get("quick_text_dataset")
+        if quick_text_dataset in text_options:
+            text_default = text_options.index(quick_text_dataset)
+        else:
+            text_default = text_options.index(text_defaults.get("text_dataset")) if text_defaults.get("text_dataset") in text_options else 0
 
         with st.expander("Step 1: Data", expanded=True):
             dataset_choice = st.selectbox(
@@ -1205,7 +1251,11 @@ with text_tab:
             bpe = st.checkbox("Use BPE", value=False, key="txt_bpe")
             bpe_vocab_size = st.number_input("BPE vocab size", min_value=50, max_value=2000, value=200, step=50, key="txt_bpe_vocab")
             text_arch_options = ["gru", "lstm", "textcnn", "transformer"]
-            text_arch_default = text_arch_options.index(text_defaults.get("text_arch")) if text_defaults.get("text_arch") in text_arch_options else 0
+            quick_text_arch = st.session_state.get("quick_text_arch")
+            if quick_text_arch in text_arch_options:
+                text_arch_default = text_arch_options.index(quick_text_arch)
+            else:
+                text_arch_default = text_arch_options.index(text_defaults.get("text_arch")) if text_defaults.get("text_arch") in text_arch_options else 0
             model_arch = st.selectbox("Model architecture", options=text_arch_options, index=text_arch_default, key="txt_arch")
 
             epochs = st.number_input("Epochs", min_value=1, max_value=20, value=3, step=1, key="txt_epochs")
