@@ -836,9 +836,10 @@ with image_tab:
                     index=dataset_default,
                     key="img_dataset",
                 )
-                arch_options = ["cnn", "resnet18"]
-                arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
-                model_arch = st.selectbox("Model architecture", options=arch_options, index=arch_default, key="img_arch")
+            arch_options = ["cnn", "resnet18", "convnext_tiny", "vit_b_16"]
+            arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
+            model_arch = st.selectbox("Model architecture", options=arch_options, index=arch_default, key="img_arch")
+            use_pretrained = st.checkbox("Use pretrained weights", value=True, key="img_pretrained")
 
             with st.expander("Step 2: Training Params", expanded=True):
                 epochs = st.number_input("Epochs", min_value=1, max_value=50, value=5, step=1, key="img_epochs")
@@ -859,6 +860,7 @@ with image_tab:
                             seed=int(seed),
                             data_dir=Path(data_dir),
                             model_arch=model_arch,
+                            use_pretrained=bool(use_pretrained),
                         )
                     st.success(f"완료: run_id={result.run_id}")
                     st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")

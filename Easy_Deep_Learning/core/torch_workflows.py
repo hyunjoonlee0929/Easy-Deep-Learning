@@ -55,6 +55,88 @@ def _load_torch_model(model: Any, run_path: Path) -> Any:
     return model
 
 
+def _build_image_model(
+    model_arch: str,
+    num_classes: int,
+    channels: int,
+    resize: int,
+    use_pretrained: bool = False,
+) -> Any:
+    torch = _require_torch()
+    import torchvision
+
+    model_arch = model_arch.lower()
+
+    if model_arch == "resnet18":
+        weights = torchvision.models.ResNet18_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.resnet18(weights=weights)
+        if channels != 3:
+            model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+        return model
+
+    if model_arch == "convnext_tiny":
+        if not hasattr(torchvision.models, "convnext_tiny"):
+            raise RuntimeError("torchvision does not include convnext_tiny. Update torchvision.")
+        weights = torchvision.models.ConvNeXt_Tiny_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.convnext_tiny(weights=weights)
+        if channels != 3:
+            first = model.features[0][0]
+            model.features[0][0] = torch.nn.Conv2d(
+                channels,
+                first.out_channels,
+                kernel_size=first.kernel_size,
+                stride=first.stride,
+                padding=first.padding,
+                bias=first.bias is not None,
+            )
+        model.classifier[2] = torch.nn.Linear(model.classifier[2].in_features, num_classes)
+        return model
+
+    if model_arch == "vit_b_16":
+        if not hasattr(torchvision.models, "vit_b_16"):
+            raise RuntimeError("torchvision does not include vit_b_16. Update torchvision.")
+        weights = torchvision.models.ViT_B_16_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.vit_b_16(weights=weights)
+        if channels != 3:
+            conv = model.conv_proj
+            model.conv_proj = torch.nn.Conv2d(
+                channels,
+                conv.out_channels,
+                kernel_size=conv.kernel_size,
+                stride=conv.stride,
+                padding=conv.padding,
+                bias=conv.bias is not None,
+            )
+        model.heads.head = torch.nn.Linear(model.heads.head.in_features, num_classes)
+        return model
+
+    class SimpleCNN(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = torch.nn.Sequential(
+                torch.nn.Conv2d(channels, 32, 3, padding=1),
+                torch.nn.ReLU(),
+                torch.nn.MaxPool2d(2),
+                torch.nn.Conv2d(32, 64, 3, padding=1),
+                torch.nn.ReLU(),
+                torch.nn.MaxPool2d(2),
+            )
+            conv_out = (resize // 4) * (resize // 4) * 64
+            self.fc = torch.nn.Sequential(
+                torch.nn.Linear(conv_out, 128),
+                torch.nn.ReLU(),
+                torch.nn.Linear(128, num_classes),
+            )
+
+        def forward(self, x):
+            x = self.conv(x)
+            x = x.view(x.size(0), -1)
+            return self.fc(x)
+
+    return SimpleCNN()
+
+
 def train_cnn_image(
     dataset_name: str,
     epochs: int,
@@ -63,6 +145,7 @@ def train_cnn_image(
     seed: int,
     data_dir: Path,
     model_arch: str = "cnn",
+    use_pretrained: bool = False,
 ) -> TorchRunResult:
     """Train a simple CNN on a built-in image dataset."""
     torch = _require_torch()
@@ -96,7 +179,7 @@ def train_cnn_image(
     else:
         raise ValueError("Unsupported dataset")
 
-    resize = 224 if model_arch == "resnet18" else input_size
+    resize = 224 if model_arch in ["resnet18", "convnext_tiny", "vit_b_16"] else input_size
     transform = transforms.Compose([
         transforms.Resize(resize),
         transforms.ToTensor(),
@@ -117,40 +200,7 @@ def train_cnn_image(
 
     num_classes = len(getattr(train_ds, "classes", [])) or int(np.max(train_ds.labels) + 1) if hasattr(train_ds, "labels") else 10
 
-    def build_image_model() -> torch.nn.Module:
-        if model_arch == "resnet18":
-            model = torchvision.models.resnet18(weights=None)
-            if channels != 3:
-                model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-            model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
-            return model
-
-        class SimpleCNN(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.conv = torch.nn.Sequential(
-                    torch.nn.Conv2d(channels, 32, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                    torch.nn.Conv2d(32, 64, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                )
-                conv_out = (resize // 4) * (resize // 4) * 64
-                self.fc = torch.nn.Sequential(
-                    torch.nn.Linear(conv_out, 128),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(128, num_classes),
-                )
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = x.view(x.size(0), -1)
-                return self.fc(x)
-
-        return SimpleCNN()
-
-    model = build_image_model()
+    model = _build_image_model(model_arch, num_classes, channels, resize, use_pretrained=use_pretrained)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -191,6 +241,7 @@ def train_cnn_image(
             "model_arch": model_arch,
             "input_size": resize,
             "channels": channels,
+            "use_pretrained": use_pretrained,
         },
     )
     tracker.save_json(run_path / "model_info.json", {"model_type": "cnn", "dataset": dataset_name, "model_arch": model_arch})
@@ -246,40 +297,7 @@ def test_cnn_image(run_id: str) -> dict[str, Any]:
 
     num_classes = len(getattr(test_ds, "classes", [])) or int(np.max(test_ds.labels) + 1) if hasattr(test_ds, "labels") else 10
 
-    def build_image_model() -> torch.nn.Module:
-        if model_arch == "resnet18":
-            model = torchvision.models.resnet18(weights=None)
-            if channels != 3:
-                model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-            model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
-            return model
-
-        class SimpleCNN(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.conv = torch.nn.Sequential(
-                    torch.nn.Conv2d(channels, 32, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                    torch.nn.Conv2d(32, 64, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                )
-                conv_out = (resize // 4) * (resize // 4) * 64
-                self.fc = torch.nn.Sequential(
-                    torch.nn.Linear(conv_out, 128),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(128, num_classes),
-                )
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = x.view(x.size(0), -1)
-                return self.fc(x)
-
-        return SimpleCNN()
-
-    model = build_image_model()
+    model = _build_image_model(model_arch, num_classes, channels, resize, use_pretrained=False)
     model = _load_torch_model(model, run_path)
 
     correct = 0
@@ -332,41 +350,8 @@ def predict_cnn_images(run_id: str, images: list[bytes]) -> list[dict[str, Any]]
 
     transform = transforms.Compose([transforms.Resize(resize), transforms.ToTensor()])
 
-    def build_image_model(num_classes: int) -> torch.nn.Module:
-        if model_arch == "resnet18":
-            model = torchvision.models.resnet18(weights=None)
-            if channels != 3:
-                model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-            model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
-            return model
-
-        class SimpleCNN(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.conv = torch.nn.Sequential(
-                    torch.nn.Conv2d(channels, 32, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                    torch.nn.Conv2d(32, 64, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                )
-                conv_out = (resize // 4) * (resize // 4) * 64
-                self.fc = torch.nn.Sequential(
-                    torch.nn.Linear(conv_out, 128),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(128, num_classes),
-                )
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = x.view(x.size(0), -1)
-                return self.fc(x)
-
-        return SimpleCNN()
-
     num_classes = len(class_names) if class_names else 10
-    model = build_image_model(num_classes)
+    model = _build_image_model(model_arch, num_classes, channels, resize, use_pretrained=False)
     model = _load_torch_model(model, run_path)
     model.eval()
 
@@ -419,41 +404,8 @@ def predict_cnn_images_with_cam(run_id: str, images: list[bytes]) -> list[dict[s
 
     transform = transforms.Compose([transforms.Resize(resize), transforms.ToTensor()])
 
-    def build_image_model(num_classes: int) -> torch.nn.Module:
-        if model_arch == "resnet18":
-            model = torchvision.models.resnet18(weights=None)
-            if channels != 3:
-                model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-            model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
-            return model
-
-        class SimpleCNN(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.conv = torch.nn.Sequential(
-                    torch.nn.Conv2d(channels, 32, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                    torch.nn.Conv2d(32, 64, 3, padding=1),
-                    torch.nn.ReLU(),
-                    torch.nn.MaxPool2d(2),
-                )
-                conv_out = (resize // 4) * (resize // 4) * 64
-                self.fc = torch.nn.Sequential(
-                    torch.nn.Linear(conv_out, 128),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(128, num_classes),
-                )
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = x.view(x.size(0), -1)
-                return self.fc(x)
-
-        return SimpleCNN()
-
     num_classes = len(class_names) if class_names else 10
-    model = build_image_model(num_classes)
+    model = _build_image_model(model_arch, num_classes, channels, resize, use_pretrained=False)
     model = _load_torch_model(model, run_path)
     model.eval()
 
@@ -479,7 +431,10 @@ def predict_cnn_images_with_cam(run_id: str, images: list[bytes]) -> list[dict[s
     if model_arch == "resnet18":
         target_layer = model.layer4
     else:
-        target_layer = model.conv[3]
+        if hasattr(model, "conv"):
+            target_layer = model.conv[3]
+        else:
+            raise RuntimeError("Grad-CAM is only supported for cnn/resnet18.")
 
     target_layer.register_forward_hook(_save_activation)
     target_layer.register_full_backward_hook(_save_gradient)
