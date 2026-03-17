@@ -36,6 +36,7 @@ def train_text_transformer(
     lr: float,
     batch_size: int,
     seed: int,
+    run_type: str = "text_transformer",
     reuse_if_exists: bool = True,
 ) -> TextRunResult:
     import torch
@@ -58,7 +59,7 @@ def train_text_transformer(
         "seed": seed,
     }
     if reuse_if_exists:
-        existing = tracker.find_matching_run("text_transformer", metadata)
+        existing = tracker.find_matching_run(run_type, metadata)
         if existing:
             run_path = Path("runs") / existing
             metrics_path = run_path / "metrics.json"
@@ -114,13 +115,13 @@ def train_text_transformer(
     trainer.train()
     eval_metrics = trainer.evaluate()
 
-    run_id, run_path = tracker.create_run(model_type="text_transformer")
+    run_id, run_path = tracker.create_run(model_type=run_type)
     tracker.save_json(run_path / "metrics.json", {k: float(v) for k, v in eval_metrics.items()})
-    tracker.save_json(run_path / "model_info.json", {"model_type": "text_transformer", "model_name": model_name})
+    tracker.save_json(run_path / "model_info.json", {"model_type": run_type, "model_name": model_name})
     tracker.save_json(
         run_path / "run_metadata.json",
         {
-            "model_type": "text_transformer",
+            "model_type": run_type,
             **metadata,
         },
     )

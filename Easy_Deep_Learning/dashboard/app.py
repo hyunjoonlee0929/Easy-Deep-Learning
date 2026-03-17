@@ -506,10 +506,11 @@ def quick_preset_state(action: str) -> dict[str, Any]:
     return {}
 
 
-tabular_tab, image_tab, text_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
+tabular_tab, image_tab, text_tab, finetune_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs([
     "Tabular",
     "Image",
     "Text Models",
+    "Fine-tune",
     "Audio Demo",
     "Video",
     "Agent",
@@ -1222,6 +1223,118 @@ with text_tab:
 
                 with st.spinner("Training Transformer..."):
                     result = train_text_transformer(
+                        data_path=tmp_text_path,
+                        text_column=text_col,
+                        label_column=label_col,
+                        model_name=model_name,
+                        epochs=int(epochs),
+                        lr=float(lr),
+                        batch_size=int(batch_size),
+                        seed=int(seed),
+                        reuse_if_exists=bool(reuse_existing),
+                    )
+                st.success(f"완료: run_id={result.run_id}")
+                st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
+                st.code(str(result.run_path.resolve()))
+
+with finetune_tab:
+    st.subheader("Easy Fine-tuning")
+    ft_image_tab, ft_text_tab = st.tabs(["Image Fine-tune", "Text Fine-tune"])
+
+    with ft_image_tab:
+        st.caption("Upload a ZIP with class subfolders. Example: data/class_a/*.jpg, data/class_b/*.jpg")
+        if not torch_available():
+            st.info("Torch/torchvision이 설치되어 있지 않아 이미지 파인튜닝을 사용할 수 없습니다.")
+            dataset_root = None
+            zip_file = None
+        else:
+            zip_file = st.file_uploader("Image dataset ZIP", type=["zip"], key="ft_img_zip")
+        if zip_file:
+            import tempfile
+            tmp_dir = Path(tempfile.mkdtemp(prefix="easy_dl_finetune_"))
+            with zipfile.ZipFile(zip_file) as zf:
+                zf.extractall(tmp_dir)
+            dataset_root = tmp_dir
+            if len(list(tmp_dir.iterdir())) == 1 and next(tmp_dir.iterdir()).is_dir():
+                dataset_root = next(tmp_dir.iterdir())
+            st.success(f"Dataset extracted to: {dataset_root}")
+        else:
+            dataset_root = None
+
+        model_arch = st.selectbox(
+            "Model architecture",
+            options=["resnet18", "resnet50", "resnet101", "resnet152", "convnext_tiny", "convnext_base", "vit_b_16", "vit_l_16", "custom"],
+            key="ft_img_arch",
+        )
+        if model_arch == "custom":
+            model_arch = st.text_input("Custom torchvision model name", value="resnet50", key="ft_img_arch_custom")
+        use_pretrained = st.checkbox("Use pretrained weights", value=True, key="ft_img_pretrained")
+        freeze_backbone = st.checkbox("Freeze backbone", value=True, key="ft_img_freeze")
+        val_split = st.slider("Validation split", min_value=0.1, max_value=0.4, value=0.2, step=0.05, key="ft_img_split")
+        epochs = st.number_input("Epochs", min_value=1, max_value=50, value=5, step=1, key="ft_img_epochs")
+        lr = st.number_input("Learning rate", min_value=1e-5, max_value=1e-2, value=1e-4, format="%.6f", key="ft_img_lr")
+        batch_size = st.number_input("Batch size", min_value=4, max_value=256, value=16, step=4, key="ft_img_batch")
+        seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="ft_img_seed")
+        reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="ft_img_reuse")
+
+        if st.button("Run Image Fine-tune", type="primary", key="ft_img_run"):
+            if dataset_root is None:
+                st.error("먼저 ZIP 데이터셋을 업로드하세요.")
+            else:
+                from Easy_Deep_Learning.core.finetune import finetune_image_folder
+
+                with st.spinner("Fine-tuning image model..."):
+                    result = finetune_image_folder(
+                        data_dir=dataset_root,
+                        model_arch=model_arch,
+                        epochs=int(epochs),
+                        lr=float(lr),
+                        batch_size=int(batch_size),
+                        seed=int(seed),
+                        use_pretrained=bool(use_pretrained),
+                        freeze_backbone=bool(freeze_backbone),
+                        val_split=float(val_split),
+                        reuse_if_exists=bool(reuse_existing),
+                    )
+                st.success(f"완료: run_id={result.run_id}")
+                st.metric("val_accuracy", f"{result.metrics['val_accuracy']:.4f}")
+                st.code(str(result.run_path.resolve()))
+
+    with ft_text_tab:
+        st.caption("CSV 업로드 후 텍스트 분류를 쉽게 파인튜닝합니다.")
+        uploaded_text = st.file_uploader("Upload text CSV", type=["csv"], key="ft_text_upload")
+        text_df = pd.read_csv(uploaded_text) if uploaded_text else None
+        if text_df is not None:
+            st.dataframe(text_df.head(20), use_container_width=True)
+        text_col = st.text_input("Text column", value="text", key="ft_text_col")
+        label_col = st.text_input("Label column", value="label", key="ft_label_col")
+        model_choices = [
+            "bert-base-uncased",
+            "roberta-base",
+            "distilbert-base-uncased",
+            "deberta-v3-base",
+            "deberta-v3-large",
+            "custom",
+        ]
+        model_name = st.selectbox("Model", options=model_choices, key="ft_text_model")
+        if model_name == "custom":
+            model_name = st.text_input("Custom HF model", value="bert-base-uncased", key="ft_text_custom")
+        epochs = st.number_input("Epochs", min_value=1, max_value=10, value=2, step=1, key="ft_text_epochs")
+        lr = st.number_input("Learning rate", min_value=1e-6, max_value=1e-3, value=2e-5, format="%.6f", key="ft_text_lr")
+        batch_size = st.number_input("Batch size", min_value=4, max_value=64, value=8, step=4, key="ft_text_batch")
+        seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="ft_text_seed")
+        reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="ft_text_reuse")
+
+        if st.button("Run Text Fine-tune", type="primary", key="ft_text_run"):
+            if text_df is None:
+                st.error("텍스트 CSV를 먼저 업로드하세요.")
+            else:
+                tmp_text_path = Path("/tmp/easy_dl_text_finetune.csv")
+                text_df.to_csv(tmp_text_path, index=False)
+                from Easy_Deep_Learning.core.finetune import finetune_text_transformer
+
+                with st.spinner("Fine-tuning text model..."):
+                    result = finetune_text_transformer(
                         data_path=tmp_text_path,
                         text_column=text_col,
                         label_column=label_col,

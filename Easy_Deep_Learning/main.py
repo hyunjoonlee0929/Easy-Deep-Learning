@@ -121,6 +121,27 @@ def build_parser() -> argparse.ArgumentParser:
     cv.add_argument("--folds", type=int, default=5)
     cv.add_argument("--model-params", type=str, default="{}")
 
+    ft_img = subparsers.add_parser("finetune-image", help="Fine-tune a pretrained image model on a folder dataset")
+    ft_img.add_argument("--data-dir", type=Path, required=True, help="Folder with class subfolders")
+    ft_img.add_argument("--model-arch", type=str, default="resnet18")
+    ft_img.add_argument("--epochs", type=int, default=5)
+    ft_img.add_argument("--lr", type=float, default=1e-4)
+    ft_img.add_argument("--batch-size", type=int, default=16)
+    ft_img.add_argument("--seed", type=int, default=42)
+    ft_img.add_argument("--pretrained", action="store_true")
+    ft_img.add_argument("--freeze-backbone", action="store_true")
+    ft_img.add_argument("--val-split", type=float, default=0.2)
+
+    ft_text = subparsers.add_parser("finetune-text", help="Fine-tune a text transformer on a CSV dataset")
+    ft_text.add_argument("--data", type=Path, required=True, help="CSV path")
+    ft_text.add_argument("--text-column", type=str, default="text")
+    ft_text.add_argument("--label-column", type=str, default="label")
+    ft_text.add_argument("--model-name", type=str, default="bert-base-uncased")
+    ft_text.add_argument("--epochs", type=int, default=2)
+    ft_text.add_argument("--lr", type=float, default=2e-5)
+    ft_text.add_argument("--batch-size", type=int, default=8)
+    ft_text.add_argument("--seed", type=int, default=42)
+
     return parser
 
 
@@ -333,6 +354,53 @@ def main() -> None:
             folds=args.folds,
             model_params=model_params,
         )
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "finetune-image":
+        from Easy_Deep_Learning.core.finetune import finetune_image_folder
+
+        result = finetune_image_folder(
+            data_dir=args.data_dir,
+            model_arch=args.model_arch,
+            epochs=args.epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+            seed=args.seed,
+            use_pretrained=bool(args.pretrained),
+            freeze_backbone=bool(args.freeze_backbone),
+            val_split=float(args.val_split),
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "finetune-image",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "finetune-text":
+        from Easy_Deep_Learning.core.finetune import finetune_text_transformer
+
+        result = finetune_text_transformer(
+            data_path=args.data,
+            text_column=args.text_column,
+            label_column=args.label_column,
+            model_name=args.model_name,
+            epochs=args.epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+            seed=args.seed,
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "finetune-text",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
         print(json.dumps(payload, indent=2))
         return
 
