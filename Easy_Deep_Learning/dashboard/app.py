@@ -630,12 +630,16 @@ with tabular_tab:
 
                     tmp_train_path = Path("/tmp/easy_dl_train.csv")
                     train_df.to_csv(tmp_train_path, index=False)
+                    cv_model_type = model_type
+                    if cv_model_type == "auto":
+                        cv_model_type, params = recommend_model(train_df, target_col, task_type)
+                        st.info(f"Auto 모델 선택: {cv_model_type}")
                     with st.spinner("Cross-validation running..."):
                         cv_result = cross_validate_and_report(
                             data_path=tmp_train_path,
                             target_column=target_col,
                             task_type=task_type,
-                            model_type=model_type,
+                            model_type=cv_model_type,
                             seed=int(seed),
                             folds=int(cv_folds),
                             model_params=params,
