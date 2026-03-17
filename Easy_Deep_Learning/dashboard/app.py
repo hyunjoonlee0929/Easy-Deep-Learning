@@ -1060,7 +1060,7 @@ with image_tab:
                 yolo_weights = custom_yolo
 
         if image is not None:
-            st.image(image, caption="Input", use_container_width=True)
+            st.image(image, caption="Input", use_container_width=False)
             if st.button("Run Detection", type="primary", key="det_run"):
                 try:
                     if model_choice != "Faster R-CNN (torchvision)":
@@ -1068,7 +1068,7 @@ with image_tab:
                     else:
                         out_img, dets = detect_image_pil(image, model_type="fasterrcnn", conf=conf)
                     st.subheader("Detections")
-                    st.image(out_img, use_container_width=True)
+                    st.image(out_img, use_container_width=False)
                     st.json(dets)
                 except Exception as exc:
                     st.error(f"Detection failed: {exc}")
