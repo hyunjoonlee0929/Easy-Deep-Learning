@@ -28,7 +28,9 @@ st.set_page_config(page_title="Easy Deep Learning", layout="wide")
 st.title("Easy Deep Learning")
 st.caption("CSV 기반 분류/회귀 모델 학습, 저장, 재평가를 빠르게 수행합니다.")
 
-st.sidebar.header("Quick Start")
+st.sidebar.header("Quick Start (Optional)")
+with st.sidebar.expander("How it works", expanded=False):
+    st.write("Preset 데이터/모델 설정을 바로 불러옵니다. 각 탭에서 수정 가능합니다.")
 quick_action = st.sidebar.radio(
     "Choose a quick workflow",
     options=["None", "Quick Classification", "Quick Regression", "Quick Image Demo", "Quick Text Demo"],
@@ -84,6 +86,12 @@ if selected_sidebar_run:
     if report_path.exists():
         with report_path.open("rb") as f:
             st.sidebar.download_button("Download report.html", f, file_name="report.html", mime="text/html")
+
+
+def show_tab_help(title: str, items: list[str]) -> None:
+    with st.expander(f"{title} 사용 방법", expanded=False):
+        for item in items:
+            st.write(f"- {item}")
 
 @st.cache_data
 def load_preset_dataset(name: str) -> tuple[pd.DataFrame, str]:
@@ -525,6 +533,12 @@ with tabular_tab:
 
     with train_view:
         st.subheader("Train")
+        show_tab_help("Tabular/Train", [
+            "CSV 또는 Preset 데이터를 선택",
+            "Target 컬럼과 Task(분류/회귀) 설정",
+            "모델/하이퍼파라미터 지정 후 학습 실행",
+            "결과는 runs/ 폴더에 저장",
+        ])
         quick_defaults = quick_preset_state(quick_action)
         if quick_action in ["Quick Classification", "Quick Regression"]:
             st.info("Quick preset applied. Data source set to Preset Dataset.")
@@ -713,6 +727,11 @@ with tabular_tab:
 
     with test_view:
         st.subheader("Test Saved Model")
+        show_tab_help("Tabular/Test", [
+            "학습된 run_id 선택",
+            "테스트 CSV 업로드 후 평가",
+            "혼동행렬/ROC/리포트 확인",
+        ])
         runs_dir = Path("runs")
         run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
 
@@ -785,6 +804,10 @@ with tabular_tab:
                     show_run_artifacts(Path("runs") / selected_run)
 
     with compare_view:
+        show_tab_help("Tabular/Compare", [
+            "여러 run_id를 선택해 성능 비교",
+            "베스트 run 확인 및 리포트 생성",
+        ])
         st.subheader("Compare Runs")
         runs_dir = Path("runs")
         run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
@@ -845,6 +868,11 @@ with image_tab:
 
     with image_models_tab:
         st.subheader("Image Models (CNN)")
+        show_tab_help("Image Models", [
+            "Preset 이미지 데이터셋 선택",
+            "모델 아키텍처 및 학습 파라미터 설정",
+            "학습 후 Test/Prediction으로 평가",
+        ])
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="img_cache")
 
         if not torch_available():
@@ -977,6 +1005,11 @@ with image_tab:
                             st.image(uploaded_imgs[i], caption=f"{pred['label']} ({pred['prob']:.3f})")
 
     with image_det_tab:
+        show_tab_help("Image Detection", [
+            "샘플/업로드 이미지 선택",
+            "YOLO/RCNN 등 모델 선택",
+            "Run Detection으로 결과 확인",
+        ])
         st.subheader("Image Detection")
         st.caption("대표 데이터셋 샘플 또는 이미지 업로드로 객체 탐지 데모.")
         from Easy_Deep_Learning.core.detection import detect_image_pil
@@ -1080,6 +1113,11 @@ with text_tab:
 
     with text_rnn_tab:
         st.subheader("Text Models (RNN)")
+        show_tab_help("Text RNN", [
+            "샘플 또는 CSV 업로드",
+            "Text/Label 컬럼 지정",
+            "전처리 옵션과 모델 아키텍처 설정",
+        ])
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="txt_cache")
 
         text_defaults = quick_preset_state(quick_action)
@@ -1181,6 +1219,10 @@ with text_tab:
 
     with text_xfm_tab:
         st.subheader("Text Models (Transformer)")
+        show_tab_help("Text Transformer", [
+            "CSV 업로드 후 컬럼 지정",
+            "HF 모델 선택 후 학습",
+        ])
         model_choices = [
             "bert-base-uncased",
             "roberta-base",
@@ -1239,6 +1281,11 @@ with text_tab:
 
 with finetune_tab:
     st.subheader("Easy Fine-tuning")
+    show_tab_help("Fine-tune", [
+        "Image: class 폴더 구조 ZIP 업로드",
+        "Text: prompt/label 컬럼 지정",
+        "LLM: prompt+completion 데이터로 LoRA 학습",
+    ])
     ft_image_tab, ft_text_tab, ft_llm_tab = st.tabs(["Image Fine-tune", "Text Fine-tune", "LLM Fine-tune"])
 
     with ft_image_tab:
@@ -1434,6 +1481,11 @@ with finetune_tab:
 
 with audio_tab:
     st.subheader("Audio Demo (WAV)")
+    show_tab_help("Audio", [
+        "샘플/업로드/녹음 오디오 선택",
+        "특징 추출 및 분류/ASR 결과 확인",
+        "Pretrained audio 모델로 감지",
+    ])
     st.caption("Built-in sine wave or WAV upload. Feature extraction + ASR + demo classifier.")
     from Easy_Deep_Learning.core.media_demo import generate_sine_wave, load_wav_bytes, write_wav_bytes, audio_features, build_audio_dataset
     from Easy_Deep_Learning.core.asr import compute_wer, compute_cer, transcribe_openai
@@ -1615,6 +1667,10 @@ with video_tab:
 
     with video_demo_tab:
         st.subheader("Video Demo (Frame Sequence)")
+        show_tab_help("Video Demo", [
+            "샘플/프레임 업로드 선택",
+            "특징 및 데모 분류 확인",
+        ])
         st.caption("Built-in synthetic frames or multiple image upload as frames. Feature extraction + demo classifier.")
         from Easy_Deep_Learning.core.media_demo import generate_synthetic_video, video_features, build_video_dataset
         from PIL import Image
@@ -1655,6 +1711,11 @@ with video_tab:
 
     with video_det_tab:
         st.subheader("Video Detection")
+        show_tab_help("Video Detection", [
+            "MP4 업로드 또는 샘플 사용",
+            "YOLO/RCNN 모델 선택",
+            "프레임 단위 디텍션 확인",
+        ])
         st.caption("MP4 업로드 후 프레임 단위 객체 탐지 데모.")
         from Easy_Deep_Learning.core.detection import detect_video_bytes
         vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
@@ -1742,6 +1803,10 @@ with video_tab:
             st.info("비디오를 업로드하세요.")
 
 with agent_tab:
+    show_tab_help("Agent", [
+        "CSV 업로드 후 타겟 컬럼 지정",
+        "도구 기반 분석 요약 확인",
+    ])
     st.subheader("Tool-Using Agent")
     agent_df, agent_target = pick_data_source("agent")
 
@@ -1787,6 +1852,10 @@ with agent_tab:
             st.write(result.final_summary)
 
 with rag_tab:
+    show_tab_help("RAG", [
+        "텍스트 문서 업로드",
+        "질문 입력 후 컨텍스트 기반 답변",
+    ])
     st.subheader("RAG + Auto Evaluation")
     docs_input = st.text_area("Documents (one per line)", height=180, key="rag_docs")
     query_input = st.text_input("Query", key="rag_query")
@@ -1820,6 +1889,10 @@ with rag_tab:
             st.json(result.eval)
 
 with mm_tab:
+    show_tab_help("Multimodal", [
+        "텍스트/이미지 입력",
+        "멀티모달 매칭 결과 확인",
+    ])
     st.subheader("Multimodal Search (Lite)")
     st.caption("이미지/텍스트를 함께 업로드하여 간단한 유사도 검색 데모를 수행합니다.")
 
@@ -1874,6 +1947,10 @@ with mm_tab:
                 st.json(results)
 
 with summary_tab:
+    show_tab_help("GitHub Summary", [
+        "GitHub URL 입력",
+        "README 요약 및 주요 정보 확인",
+    ])
     st.subheader("GitHub README Summary")
     st.caption("리포트형 요약 탭입니다. GitHub 링크 또는 README 텍스트를 분석해 구조/기능/사용법을 정리합니다.")
 
@@ -1937,6 +2014,10 @@ with summary_tab:
 with chatbot_tab:
     st.subheader("Chatbot")
     st.caption("질문형 챗봇입니다. GitHub 링크를 포함한 질문에 답변합니다. (옵션: LLM 파인튜닝 모델)")
+    show_tab_help("Chatbot", [
+        "기본은 룰/요약 기반 응답",
+        "LLM 파인튜닝 run 선택 시 멀티턴 대화 가능",
+    ])
 
     runs_dir = Path("runs")
     llm_runs = sorted([p.name for p in runs_dir.iterdir() if p.is_dir() and p.name.endswith("_llm_finetune")], reverse=True) if runs_dir.exists() else []
