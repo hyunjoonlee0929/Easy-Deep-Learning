@@ -319,7 +319,12 @@ def show_run_artifacts(run_path: Path) -> None:
         if priority:
             st.write("Priority:")
             st.write(priority)
-        with st.expander("All Recommendations", expanded=False):
+        show_all = st.checkbox(
+            "Show all recommendations",
+            value=False,
+            key=f"rec_all_{run_path.name}",
+        )
+        if show_all:
             st.json(rec_payload)
 
     quality_path = run_path / "data_quality.json"
