@@ -1239,7 +1239,7 @@ with text_tab:
 
 with finetune_tab:
     st.subheader("Easy Fine-tuning")
-    ft_image_tab, ft_text_tab = st.tabs(["Image Fine-tune", "Text Fine-tune"])
+    ft_image_tab, ft_text_tab, ft_llm_tab = st.tabs(["Image Fine-tune", "Text Fine-tune", "LLM Fine-tune"])
 
     with ft_image_tab:
         st.caption("Upload a ZIP with class subfolders. Example: data/class_a/*.jpg, data/class_b/*.jpg")
@@ -1348,6 +1348,63 @@ with finetune_tab:
                 st.success(f"완료: run_id={result.run_id}")
                 st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
                 st.code(str(result.run_path.resolve()))
+
+    with ft_llm_tab:
+        st.caption("JSONL/CSV (prompt + completion) 기반 LoRA 파인튜닝.")
+        st.info("LLM 파인튜닝은 GPU 환경에서 권장됩니다.")
+        if not torch_available():
+            st.info("Torch/transformers/peft가 설치되어 있지 않아 LLM 파인튜닝을 사용할 수 없습니다.")
+            uploaded_llm = None
+            llm_path = None
+        else:
+            uploaded_llm = st.file_uploader("Upload JSONL/CSV", type=["jsonl", "csv"], key="ft_llm_upload")
+            llm_path = None
+            if uploaded_llm:
+                llm_path = Path("/tmp/easy_dl_llm_finetune." + uploaded_llm.name.split(".")[-1])
+                llm_path.write_bytes(uploaded_llm.getvalue())
+                st.success(f"Uploaded: {llm_path.name}")
+        prompt_col = st.text_input("Prompt column", value="prompt", key="ft_llm_prompt_col")
+        completion_col = st.text_input("Completion column", value="completion", key="ft_llm_completion_col")
+        if torch_available():
+            llm_models = ["distilgpt2", "gpt2", "gpt2-medium", "EleutherAI/gpt-neo-125M", "custom"]
+            llm_model = st.selectbox("Base model", options=llm_models, key="ft_llm_model")
+            if llm_model == "custom":
+                llm_model = st.text_input("Custom HF model", value="distilgpt2", key="ft_llm_model_custom")
+            epochs = st.number_input("Epochs", min_value=1, max_value=5, value=1, step=1, key="ft_llm_epochs")
+            lr = st.number_input("Learning rate", min_value=1e-6, max_value=5e-4, value=2e-5, format="%.6f", key="ft_llm_lr")
+            batch_size = st.number_input("Batch size", min_value=1, max_value=16, value=2, step=1, key="ft_llm_batch")
+            seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="ft_llm_seed")
+            max_length = st.number_input("Max length", min_value=64, max_value=1024, value=256, step=32, key="ft_llm_maxlen")
+            lora_r = st.number_input("LoRA r", min_value=2, max_value=64, value=8, step=2, key="ft_llm_r")
+            lora_alpha = st.number_input("LoRA alpha", min_value=4, max_value=128, value=16, step=4, key="ft_llm_alpha")
+            lora_dropout = st.slider("LoRA dropout", min_value=0.0, max_value=0.3, value=0.05, step=0.01, key="ft_llm_dropout")
+            reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="ft_llm_reuse")
+
+            if st.button("Run LLM Fine-tune", type="primary", key="ft_llm_run"):
+                if llm_path is None:
+                    st.error("JSONL/CSV를 먼저 업로드하세요.")
+                else:
+                    from Easy_Deep_Learning.core.llm_finetune import finetune_llm_lora
+
+                    with st.spinner("Fine-tuning LLM (LoRA)..."):
+                        result = finetune_llm_lora(
+                            data_path=llm_path,
+                            model_name=llm_model,
+                            prompt_column=prompt_col,
+                            completion_column=completion_col,
+                            epochs=int(epochs),
+                            lr=float(lr),
+                            batch_size=int(batch_size),
+                            seed=int(seed),
+                            max_length=int(max_length),
+                            lora_r=int(lora_r),
+                            lora_alpha=int(lora_alpha),
+                            lora_dropout=float(lora_dropout),
+                            reuse_if_exists=bool(reuse_existing),
+                        )
+                    st.success(f"완료: run_id={result.run_id}")
+                    st.json(result.metrics)
+                    st.code(str(result.run_path.resolve()))
 
 with audio_tab:
     st.subheader("Audio Demo (WAV)")

@@ -121,6 +121,20 @@ def build_parser() -> argparse.ArgumentParser:
     cv.add_argument("--folds", type=int, default=5)
     cv.add_argument("--model-params", type=str, default="{}")
 
+    ft_llm = subparsers.add_parser("finetune-llm", help="Fine-tune a causal LLM with LoRA")
+    ft_llm.add_argument("--data", type=Path, required=True, help="JSONL/CSV path")
+    ft_llm.add_argument("--prompt-column", type=str, default="prompt")
+    ft_llm.add_argument("--completion-column", type=str, default="completion")
+    ft_llm.add_argument("--model-name", type=str, default="distilgpt2")
+    ft_llm.add_argument("--epochs", type=int, default=1)
+    ft_llm.add_argument("--lr", type=float, default=2e-5)
+    ft_llm.add_argument("--batch-size", type=int, default=2)
+    ft_llm.add_argument("--seed", type=int, default=42)
+    ft_llm.add_argument("--max-length", type=int, default=256)
+    ft_llm.add_argument("--lora-r", type=int, default=8)
+    ft_llm.add_argument("--lora-alpha", type=int, default=16)
+    ft_llm.add_argument("--lora-dropout", type=float, default=0.05)
+
     ft_img = subparsers.add_parser("finetune-image", help="Fine-tune a pretrained image model on a folder dataset")
     ft_img.add_argument("--data-dir", type=Path, required=True, help="Folder with class subfolders")
     ft_img.add_argument("--model-arch", type=str, default="resnet18")
@@ -397,6 +411,33 @@ def main() -> None:
         payload = {
             "project": "Easy Deep Learning",
             "mode": "finetune-text",
+            "run_id": result.run_id,
+            "run_path": str(result.run_path.resolve()),
+            "metrics": result.metrics,
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "finetune-llm":
+        from Easy_Deep_Learning.core.llm_finetune import finetune_llm_lora
+
+        result = finetune_llm_lora(
+            data_path=args.data,
+            model_name=args.model_name,
+            prompt_column=args.prompt_column,
+            completion_column=args.completion_column,
+            epochs=args.epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+            seed=args.seed,
+            max_length=args.max_length,
+            lora_r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+        )
+        payload = {
+            "project": "Easy Deep Learning",
+            "mode": "finetune-llm",
             "run_id": result.run_id,
             "run_path": str(result.run_path.resolve()),
             "metrics": result.metrics,
