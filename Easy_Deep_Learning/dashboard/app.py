@@ -33,11 +33,41 @@ with st.sidebar.expander("How it works", expanded=False):
     st.write("Preset 데이터/모델 설정을 바로 불러옵니다. 각 탭에서 수정 가능합니다.")
 quick_action = st.sidebar.radio(
     "Choose a quick workflow",
-    options=["None", "Quick Tabular Classification", "Quick Tabular Regression", "Quick Image Models", "Quick Text Models"],
+    options=[
+        "None",
+        "Quick Tabular Classification",
+        "Quick Tabular Regression",
+        "Quick Image Models",
+        "Quick Text Models",
+        "Quick Fine-tune",
+        "Quick Audio Demo",
+        "Quick Video",
+        "Quick Agent",
+        "Quick RAG",
+        "Quick Multimodal",
+        "Quick GitHub Summary",
+        "Quick Chatbot",
+    ],
     index=0,
 )
 if quick_action != "None":
     st.sidebar.info("Quick Start presets loaded. Adjust if needed.")
+quick_tab_map = {
+    "Quick Tabular Classification": "Tabular",
+    "Quick Tabular Regression": "Tabular",
+    "Quick Image Models": "Image",
+    "Quick Text Models": "Text Models",
+    "Quick Fine-tune": "Fine-tune",
+    "Quick Audio Demo": "Audio Demo",
+    "Quick Video": "Video",
+    "Quick Agent": "Agent",
+    "Quick RAG": "RAG",
+    "Quick Multimodal": "Multimodal",
+    "Quick GitHub Summary": "GitHub Summary",
+    "Quick Chatbot": "Chatbot",
+}
+if quick_action in quick_tab_map:
+    st.session_state["active_tab"] = quick_tab_map[quick_action]
 if st.sidebar.button("Clear Quick Preset"):
     for key in ["train_source_default", "train_preset_default"]:
         if key in st.session_state:
@@ -566,11 +596,13 @@ tab_labels = [
     "GitHub Summary",
     "Chatbot",
 ]
-tabular_tab, image_tab, text_tab, finetune_tab, audio_tab, video_tab, agent_tab, rag_tab, mm_tab, summary_tab, chatbot_tab = st.tabs(
-    tab_labels
-)
+default_tab = st.session_state.get("active_tab", "Tabular")
+if default_tab not in tab_labels:
+    default_tab = "Tabular"
+tab_index = tab_labels.index(default_tab)
+active_tab = st.radio("Navigation", tab_labels, index=tab_index, horizontal=True, key="active_tab")
 
-with tabular_tab:
+if active_tab == "Tabular":
     train_view, test_view, compare_view = st.tabs(["Train", "Test", "Compare"])
 
     with train_view:
@@ -581,19 +613,6 @@ with tabular_tab:
             "모델/하이퍼파라미터 지정 후 학습 실행",
             "결과는 runs/ 폴더에 저장",
         ])
-        with st.expander("Quick Tabular Setup", expanded=False):
-            if st.button("Quick Classification", key="quick_tab_cls"):
-                st.session_state["train_source_default"] = "Preset Dataset"
-                st.session_state["train_preset_default"] = "Breast Cancer (classification)"
-                st.session_state["quick_task_type"] = "classification"
-                st.session_state["quick_model_type"] = "rf"
-                st.rerun()
-            if st.button("Quick Regression", key="quick_tab_reg"):
-                st.session_state["train_source_default"] = "Preset Dataset"
-                st.session_state["train_preset_default"] = "Diabetes (regression)"
-                st.session_state["quick_task_type"] = "regression"
-                st.session_state["quick_model_type"] = "gbm"
-                st.rerun()
         quick_defaults = quick_preset_state(quick_action)
         if quick_action in ["Quick Tabular Classification", "Quick Tabular Regression"]:
             st.info("Quick preset applied for Tabular. Data source set to Preset Dataset.")
@@ -930,7 +949,7 @@ with tabular_tab:
                     with report_path.open("rb") as f:
                         st.download_button("Download compare_report.html", f, file_name="compare_report.html", mime="text/html")
 
-with image_tab:
+if active_tab == "Image":
     image_models_tab, image_det_tab = st.tabs(["Image Models", "Image Detection"])
 
     with image_models_tab:
@@ -940,18 +959,13 @@ with image_tab:
             "모델 아키텍처 및 학습 파라미터 설정",
             "학습 후 Test/Prediction으로 평가",
         ])
-        with st.expander("Quick Image Setup", expanded=False):
-            if st.button("Quick Image Demo", key="quick_img_demo"):
-                st.session_state["quick_image_dataset"] = "MNIST"
-                st.session_state["quick_image_arch"] = "cnn"
-                st.rerun()
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="img_cache")
 
         if not torch_available():
             st.info("Torch/torchvision이 설치되어 있지 않아 이미지 모델을 사용할 수 없습니다.")
         else:
             if quick_action == "Quick Image Models":
-                st.info("Quick Image preset applied. If you set this from sidebar, open Image tab.")
+                st.info("Quick Image preset applied.")
             image_defaults = quick_preset_state(quick_action)
             with st.expander("Step 1: Dataset & Model", expanded=True):
                 dataset_options = ["MNIST", "FashionMNIST", "CIFAR10", "SVHN", "EMNIST"]
@@ -1188,7 +1202,7 @@ with image_tab:
         else:
             st.info("이미지를 준비하세요.")
 
-with text_tab:
+if active_tab == "Text Models":
     text_rnn_tab, text_xfm_tab = st.tabs(["RNN", "Transformer"])
 
     with text_rnn_tab:
@@ -1198,16 +1212,11 @@ with text_tab:
             "Text/Label 컬럼 지정",
             "전처리 옵션과 모델 아키텍처 설정",
         ])
-        with st.expander("Quick Text Setup", expanded=False):
-            if st.button("Quick Text Demo", key="quick_text_demo"):
-                st.session_state["quick_text_dataset"] = "SST2_SAMPLE"
-                st.session_state["quick_text_arch"] = "gru"
-                st.rerun()
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="txt_cache")
 
         text_defaults = quick_preset_state(quick_action)
         if quick_action == "Quick Text Models":
-            st.info("Quick Text preset applied. If you set this from sidebar, open Text tab.")
+            st.info("Quick Text preset applied.")
         text_options = ["AG_NEWS_SAMPLE", "SST2_SAMPLE", "TREC_SAMPLE", "Upload CSV"]
         quick_text_dataset = st.session_state.get("quick_text_dataset")
         if quick_text_dataset in text_options:
@@ -1372,7 +1381,7 @@ with text_tab:
                 st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
                 st.code(str(result.run_path.resolve()))
 
-with finetune_tab:
+if active_tab == "Fine-tune":
     st.subheader("Easy Fine-tuning")
     show_tab_help("Fine-tune", [
         "Image: class 폴더 구조 ZIP 업로드",
@@ -1572,7 +1581,7 @@ with finetune_tab:
                         )
                     st.text_area("Output", value=output, height=200)
 
-with audio_tab:
+if active_tab == "Audio Demo":
     st.subheader("Audio Demo (WAV)")
     show_tab_help("Audio", [
         "샘플/업로드/녹음 오디오 선택",
@@ -1755,7 +1764,7 @@ with audio_tab:
             except Exception as exc:
                 st.error(f"Audio detection failed: {exc}")
 
-with video_tab:
+if active_tab == "Video":
     video_demo_tab, video_det_tab = st.tabs(["Video Demo", "Video Detection"])
 
     with video_demo_tab:
@@ -1895,7 +1904,7 @@ with video_tab:
         else:
             st.info("비디오를 업로드하세요.")
 
-with agent_tab:
+if active_tab == "Agent":
     show_tab_help("Agent", [
         "CSV 업로드 후 타겟 컬럼 지정",
         "도구 기반 분석 요약 확인",
@@ -1944,7 +1953,7 @@ with agent_tab:
             st.subheader("Summary")
             st.write(result.final_summary)
 
-with rag_tab:
+if active_tab == "RAG":
     show_tab_help("RAG", [
         "텍스트 문서 업로드",
         "질문 입력 후 컨텍스트 기반 답변",
@@ -1981,7 +1990,7 @@ with rag_tab:
             st.subheader("Auto Evaluation")
             st.json(result.eval)
 
-with mm_tab:
+if active_tab == "Multimodal":
     show_tab_help("Multimodal", [
         "텍스트/이미지 입력",
         "멀티모달 매칭 결과 확인",
@@ -2039,7 +2048,7 @@ with mm_tab:
                 results = search_by_image(index, img, top_k=int(top_k))
                 st.json(results)
 
-with summary_tab:
+if active_tab == "GitHub Summary":
     show_tab_help("GitHub Summary", [
         "GitHub URL 입력",
         "README 요약 및 주요 정보 확인",
@@ -2104,7 +2113,7 @@ with summary_tab:
             except Exception as exc:
                 st.error(f"분석 실패: {exc}")
 
-with chatbot_tab:
+if active_tab == "Chatbot":
     st.subheader("Chatbot")
     st.caption("질문형 챗봇입니다. GitHub 링크를 포함한 질문에 답변합니다. (옵션: LLM 파인튜닝 모델)")
     show_tab_help("Chatbot", [
