@@ -1030,22 +1030,31 @@ with image_tab:
                 "YOLOv8m (ultralytics)",
                 "YOLOv8l (ultralytics)",
                 "YOLOv8x (ultralytics)",
+                "YOLOv9c (ultralytics)",
+                "YOLOv10n (ultralytics)",
+                "YOLOv11n (ultralytics)",
+                "RT-DETR-L (ultralytics)",
                 "Faster R-CNN (torchvision)",
+                "Custom (ultralytics)",
             ],
             key="det_model",
         )
         conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_conf")
         yolo_weights = "yolov8n.pt"
-        if model_choice.startswith("YOLOv8"):
+        if model_choice != "Faster R-CNN (torchvision)":
             yolo_map = {
                 "YOLOv8n (ultralytics)": "yolov8n.pt",
                 "YOLOv8s (ultralytics)": "yolov8s.pt",
                 "YOLOv8m (ultralytics)": "yolov8m.pt",
                 "YOLOv8l (ultralytics)": "yolov8l.pt",
                 "YOLOv8x (ultralytics)": "yolov8x.pt",
+                "YOLOv9c (ultralytics)": "yolov9c.pt",
+                "YOLOv10n (ultralytics)": "yolov10n.pt",
+                "YOLOv11n (ultralytics)": "yolov11n.pt",
+                "RT-DETR-L (ultralytics)": "rtdetr-l.pt",
             }
             yolo_weights = yolo_map.get(model_choice, "yolov8n.pt")
-            custom_yolo = st.text_input("Custom YOLO weights (optional)", value=yolo_weights, key="det_weights")
+            custom_yolo = st.text_input("Custom weights (optional)", value=yolo_weights, key="det_weights")
             if custom_yolo:
                 yolo_weights = custom_yolo
 
@@ -1053,7 +1062,7 @@ with image_tab:
             st.image(image, caption="Input", use_container_width=True)
             if st.button("Run Detection", type="primary", key="det_run"):
                 try:
-                    if model_choice.startswith("YOLO"):
+                    if model_choice != "Faster R-CNN (torchvision)":
                         out_img, dets = detect_image_pil(image, model_type="yolo", conf=conf, model_name=yolo_weights)
                     else:
                         out_img, dets = detect_image_pil(image, model_type="fasterrcnn", conf=conf)
@@ -1367,6 +1376,44 @@ with audio_tab:
         label = "Low freq" if int(pred) == 0 else "High freq"
         st.metric("Audio Demo Prediction", label)
 
+    st.subheader("Audio Detection (Pretrained Models)")
+    st.caption("Keyword spotting / audio event classification (HF pretrained).")
+    audio_model_choices = [
+        "superb/wav2vec2-base-superb-ks",
+        "MIT/ast-finetuned-audioset-10-10-0.4593",
+        "laion/clap-htsat-unfused",
+        "custom",
+    ]
+    audio_model = st.selectbox("Audio model", options=audio_model_choices, key="audio_model")
+    if audio_model == "custom":
+        audio_model = st.text_input("Custom HF audio model", value="superb/wav2vec2-base-superb-ks", key="audio_model_custom")
+    top_k = st.number_input("Top-K predictions", min_value=1, max_value=10, value=5, step=1, key="audio_topk")
+    if st.button("Run Audio Detection", type="secondary", key="audio_detect_run"):
+        from Easy_Deep_Learning.core.audio_models import classify_audio_bytes
+        audio_bytes = None
+        if uploaded is not None:
+            audio_bytes = uploaded.read()
+        elif recorded is not None:
+            audio_bytes = recorded.getvalue()
+        elif webrtc_wav is not None:
+            audio_bytes = webrtc_wav
+        else:
+            if built_in.startswith("Sine"):
+                audio_bytes = audio
+            else:
+                try:
+                    audio_bytes = (samples_dir / built_in).read_bytes()
+                except Exception:
+                    audio_bytes = None
+        if audio_bytes is None:
+            st.error("오디오 입력을 먼저 준비하세요.")
+        else:
+            try:
+                results = classify_audio_bytes(audio_bytes, model_name=audio_model, top_k=int(top_k))
+                st.json(results)
+            except Exception as exc:
+                st.error(f"Audio detection failed: {exc}")
+
 with video_tab:
     video_demo_tab, video_det_tab = st.tabs(["Video Demo", "Video Detection"])
 
@@ -1424,7 +1471,12 @@ with video_tab:
                 "YOLOv8m (ultralytics)",
                 "YOLOv8l (ultralytics)",
                 "YOLOv8x (ultralytics)",
+                "YOLOv9c (ultralytics)",
+                "YOLOv10n (ultralytics)",
+                "YOLOv11n (ultralytics)",
+                "RT-DETR-L (ultralytics)",
                 "Faster R-CNN (torchvision)",
+                "Custom (ultralytics)",
             ],
             key="det_video_model",
         )
@@ -1432,16 +1484,20 @@ with video_tab:
         frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
         max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
         yolo_weights = "yolov8n.pt"
-        if model_choice.startswith("YOLOv8"):
+        if model_choice != "Faster R-CNN (torchvision)":
             yolo_map = {
                 "YOLOv8n (ultralytics)": "yolov8n.pt",
                 "YOLOv8s (ultralytics)": "yolov8s.pt",
                 "YOLOv8m (ultralytics)": "yolov8m.pt",
                 "YOLOv8l (ultralytics)": "yolov8l.pt",
                 "YOLOv8x (ultralytics)": "yolov8x.pt",
+                "YOLOv9c (ultralytics)": "yolov9c.pt",
+                "YOLOv10n (ultralytics)": "yolov10n.pt",
+                "YOLOv11n (ultralytics)": "yolov11n.pt",
+                "RT-DETR-L (ultralytics)": "rtdetr-l.pt",
             }
             yolo_weights = yolo_map.get(model_choice, "yolov8n.pt")
-            custom_yolo = st.text_input("Custom YOLO weights (optional)", value=yolo_weights, key="det_video_weights")
+            custom_yolo = st.text_input("Custom weights (optional)", value=yolo_weights, key="det_video_weights")
             if custom_yolo:
                 yolo_weights = custom_yolo
 
@@ -1473,7 +1529,7 @@ with video_tab:
                 try:
                     frames, dets = detect_video_bytes(
                         video_bytes=vid.read(),
-                        model_type="yolo" if model_choice.startswith("YOLO") else "fasterrcnn",
+                        model_type="yolo" if model_choice != "Faster R-CNN (torchvision)" else "fasterrcnn",
                         conf=conf,
                         model_name=yolo_weights,
                         frame_stride=int(frame_stride),
