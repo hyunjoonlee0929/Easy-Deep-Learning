@@ -189,3 +189,34 @@ def generate_with_lora(
             pad_token_id=tokenizer.eos_token_id,
         )
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+
+def build_chat_prompt(messages: list[dict[str, str]]) -> str:
+    """Format chat history into a single prompt for causal LMs."""
+    parts = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if not content:
+            continue
+        parts.append(f"{role.upper()}: {content}")
+    parts.append("ASSISTANT:")
+    return "\n".join(parts).strip()
+
+
+def generate_chat_with_lora(
+    run_path: Path,
+    messages: list[dict[str, str]],
+    max_new_tokens: int = 128,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+) -> str:
+    """Generate a chat response given message history."""
+    prompt = build_chat_prompt(messages)
+    return generate_with_lora(
+        run_path=run_path,
+        prompt=prompt,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_p=top_p,
+    )

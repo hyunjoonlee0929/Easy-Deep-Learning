@@ -1936,7 +1936,17 @@ with summary_tab:
 
 with chatbot_tab:
     st.subheader("Chatbot")
-    st.caption("질문형 챗봇입니다. GitHub 링크를 포함한 질문에 답변합니다.")
+    st.caption("질문형 챗봇입니다. GitHub 링크를 포함한 질문에 답변합니다. (옵션: LLM 파인튜닝 모델)")
+
+    runs_dir = Path("runs")
+    llm_runs = sorted([p.name for p in runs_dir.iterdir() if p.is_dir() and p.name.endswith("_llm_finetune")], reverse=True) if runs_dir.exists() else []
+    use_llm = st.checkbox("Use fine-tuned LLM", value=False, key="chat_use_llm")
+    llm_run = None
+    if use_llm:
+        llm_run = st.selectbox("LLM run_id", options=llm_runs, key="chat_llm_run")
+        max_new_tokens = st.number_input("Max new tokens", min_value=16, max_value=512, value=128, step=16, key="chat_llm_maxlen")
+        temperature = st.number_input("Temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1, key="chat_llm_temp")
+        top_p = st.number_input("Top-p", min_value=0.1, max_value=1.0, value=0.9, step=0.05, key="chat_llm_top_p")
 
     if "chat_messages" not in st.session_state:
         st.session_state["chat_messages"] = []
@@ -1951,9 +1961,24 @@ with chatbot_tab:
         with st.chat_message("user"):
             st.write(user_input)
 
-        from Easy_Deep_Learning.core.chatbot import chat_response
+        if use_llm:
+            if not llm_run:
+                reply = "LLM run_id를 선택하세요."
+            else:
+                from Easy_Deep_Learning.core.llm_finetune import generate_chat_with_lora
+
+                reply = generate_chat_with_lora(
+                    run_path=Path("runs") / llm_run,
+                    messages=st.session_state["chat_messages"],
+                    max_new_tokens=int(max_new_tokens),
+                    temperature=float(temperature),
+                    top_p=float(top_p),
+                )
+        else:
+            from Easy_Deep_Learning.core.chatbot import chat_response
+
+            reply = chat_response(user_input)
 
         with st.chat_message("assistant"):
-            reply = chat_response(user_input)
             st.write(reply)
         st.session_state["chat_messages"].append({"role": "assistant", "content": reply})
