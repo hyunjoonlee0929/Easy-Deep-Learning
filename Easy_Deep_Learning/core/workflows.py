@@ -625,9 +625,12 @@ def test_from_run(
     save_artifacts: bool = False,
 ) -> dict[str, Any]:
     """Load saved run artifacts and evaluate on a new dataset."""
-    run_path = Path("runs") / run_id
+    run_path = Path(run_id)
+    if not run_path.exists():
+        run_path = Path("runs") / run_id
     if not run_path.exists():
         raise FileNotFoundError(f"Run '{run_id}' does not exist.")
+    run_id = run_path.name
 
     snapshot = load_yaml(run_path / "config_snapshot.yaml")
     model_info = json.loads((run_path / "model_info.json").read_text(encoding="utf-8"))

@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+import zipfile
 from typing import Any
 
 import numpy as np
@@ -714,9 +715,31 @@ with tabular_tab:
         runs_dir = Path("runs")
         run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
 
+        with st.expander("Import Saved Run (ZIP)", expanded=False):
+            uploaded_zip = st.file_uploader("Upload run zip", type=["zip"], key="run_zip")
+            if uploaded_zip:
+                try:
+                    zip_name = Path(uploaded_zip.name).stem
+                    target_dir = runs_dir / zip_name
+                    suffix = 1
+                    while target_dir.exists():
+                        target_dir = runs_dir / f"{zip_name}_{suffix}"
+                        suffix += 1
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    with zipfile.ZipFile(uploaded_zip) as zf:
+                        zf.extractall(target_dir)
+                    st.success(f"Imported run into {target_dir.name}")
+                    st.session_state["selected_run"] = target_dir.name
+                    if target_dir.name not in run_ids:
+                        run_ids.insert(0, target_dir.name)
+                except Exception as exc:
+                    st.error(f"Import failed: {exc}")
+
         with st.expander("Step 1: Select Run", expanded=True):
             run_options = run_ids if run_ids else [""]
             default_index = run_options.index(selected_sidebar_run) if selected_sidebar_run in run_options else 0
+            if "selected_run" in st.session_state and st.session_state["selected_run"] in run_options:
+                default_index = run_options.index(st.session_state["selected_run"])
             selected_run = st.selectbox("Run ID 선택", options=run_options, index=default_index)
             if selected_run:
                 show_run_artifacts(Path("runs") / selected_run)
