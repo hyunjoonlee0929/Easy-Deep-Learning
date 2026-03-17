@@ -176,6 +176,16 @@ def model_param_controls(model_type: str) -> dict[str, Any]:
         params["patience"] = st.number_input("Early stop patience", min_value=3, max_value=200, value=20, step=1, key="tab_dnn_patience")
         params["batch_size"] = st.number_input("Batch size", min_value=4, max_value=1024, value=32, step=4, key="tab_dnn_batch")
 
+    if model_type == "tab_transformer":
+        params["embed_dim"] = st.number_input("Embed dim", min_value=16, max_value=256, value=64, step=16, key="tab_tt_embed")
+        params["num_heads"] = st.number_input("Num heads", min_value=1, max_value=16, value=4, step=1, key="tab_tt_heads")
+        params["num_layers"] = st.number_input("Num layers", min_value=1, max_value=8, value=2, step=1, key="tab_tt_layers")
+        params["dropout"] = st.number_input("Dropout", min_value=0.0, max_value=0.8, value=0.1, step=0.05, key="tab_tt_dropout")
+        params["learning_rate"] = st.number_input("Learning rate", min_value=1e-5, max_value=1e-1, value=1e-3, format="%.5f", key="tab_tt_lr")
+        params["max_epochs"] = st.number_input("Max epochs", min_value=10, max_value=500, value=100, step=10, key="tab_tt_epochs")
+        params["patience"] = st.number_input("Early stop patience", min_value=3, max_value=100, value=10, step=1, key="tab_tt_patience")
+        params["batch_size"] = st.number_input("Batch size", min_value=4, max_value=512, value=64, step=4, key="tab_tt_batch")
+
     if model_type == "rf":
         params["n_estimators"] = st.number_input("n_estimators", min_value=10, max_value=1000, value=200, step=10, key="tab_rf_estimators")
         params["max_depth"] = st.number_input("max_depth (0 = None)", min_value=0, max_value=100, value=0, step=1, key="tab_rf_depth")
@@ -548,7 +558,7 @@ with tabular_tab:
                     if train_df[target_col].nunique() > 20:
                         st.warning("클래스 수가 많아 보입니다. 회귀 문제인지 확인하세요.")
 
-                model_options = ["auto", "dnn", "rf", "svm", "knn", "lr", "gbm", "xgboost"]
+                model_options = ["auto", "dnn", "tab_transformer", "rf", "svm", "knn", "lr", "gbm", "xgboost"]
                 model_default = model_options.index(quick_defaults.get("model_type")) if quick_defaults.get("model_type") in model_options else 0
                 model_type = st.selectbox("Model type", options=model_options, index=model_default)
                 seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="tab_seed")

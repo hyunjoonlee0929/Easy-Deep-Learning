@@ -324,6 +324,219 @@ class DNNClassifier(_TorchDNNBase):
         return probs
 
 
+class _TorchTabTransformerBase:
+    """Lightweight transformer for tabular data."""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        num_layers: int,
+        dropout: float,
+        learning_rate: float,
+        max_epochs: int,
+        patience: int,
+        batch_size: int,
+        val_split: float,
+        random_state: int,
+    ) -> None:
+        try:
+            import torch
+            import torch.nn as nn
+        except ImportError as exc:
+            raise ImportError("PyTorch is required for tab transformer models.") from exc
+
+        self.torch = torch
+        self.nn = nn
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.dropout = dropout
+        self.learning_rate = learning_rate
+        self.max_epochs = max_epochs
+        self.patience = patience
+        self.batch_size = batch_size
+        self.val_split = val_split
+        self.random_state = random_state
+
+        self.model: Any | None = None
+        self.input_dim: int | None = None
+        self.best_state: dict[str, Any] | None = None
+
+    def _to_numpy(self, X: Any) -> np.ndarray:
+        if hasattr(X, "toarray"):
+            return X.toarray().astype(np.float32)
+        return np.asarray(X, dtype=np.float32)
+
+    def _make_val_split(self, X_np: np.ndarray, y_np: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if len(X_np) < 5:
+            return X_np, X_np, y_np, y_np
+        split_idx = int(len(X_np) * (1.0 - self.val_split))
+        split_idx = min(max(split_idx, 1), len(X_np) - 1)
+        return X_np[:split_idx], X_np[split_idx:], y_np[:split_idx], y_np[split_idx:]
+
+    def _build_model(self, input_dim: int, output_dim: int) -> Any:
+        nn = self.nn
+        torch = self.torch
+
+        class TabTransformer(nn.Module):
+            def __init__(self, input_dim: int, embed_dim: int, num_heads: int, num_layers: int, dropout: float, output_dim: int):
+                super().__init__()
+                self.input_dim = input_dim
+                self.embed = nn.Linear(1, embed_dim)
+                self.pos = nn.Parameter(torch.zeros(1, input_dim, embed_dim))
+                encoder_layer = nn.TransformerEncoderLayer(
+                    d_model=embed_dim,
+                    nhead=max(1, num_heads),
+                    dropout=dropout,
+                    batch_first=True,
+                )
+                self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=max(1, num_layers))
+                self.head = nn.Sequential(
+                    nn.LayerNorm(embed_dim),
+                    nn.Linear(embed_dim, output_dim),
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                x = x.unsqueeze(-1)
+                x = self.embed(x)
+                x = x + self.pos[:, : x.shape[1], :]
+                x = self.encoder(x)
+                x = x.mean(dim=1)
+                return self.head(x)
+
+        return TabTransformer(input_dim, self.embed_dim, self.num_heads, self.num_layers, self.dropout, output_dim)
+
+
+class TabTransformerRegressor(_TorchTabTransformerBase):
+    """Transformer regressor for tabular data."""
+
+    def fit(self, X: Any, y: Any) -> "TabTransformerRegressor":
+        torch = self.torch
+        X_np = self._to_numpy(X)
+        y_np = np.asarray(y, dtype=np.float32).reshape(-1, 1)
+        X_train, X_val, y_train, y_val = self._make_val_split(X_np, y_np)
+
+        self.input_dim = X_np.shape[1]
+        self.model = self._build_model(self.input_dim, 1)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        loss_fn = torch.nn.MSELoss()
+
+        best_val = float("inf")
+        no_improve = 0
+        for _ in range(self.max_epochs):
+            self.model.train()
+            idx = np.random.permutation(len(X_train))
+            for s in range(0, len(idx), self.batch_size):
+                batch = idx[s : s + self.batch_size]
+                xb = torch.from_numpy(X_train[batch])
+                yb = torch.from_numpy(y_train[batch])
+                pred = self.model(xb)
+                loss = loss_fn(pred, yb)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            self.model.eval()
+            with torch.no_grad():
+                val_pred = self.model(torch.from_numpy(X_val))
+                val_loss = float(loss_fn(val_pred, torch.from_numpy(y_val)).item())
+            if val_loss < best_val:
+                best_val = val_loss
+                self.best_state = copy.deepcopy(self.model.state_dict())
+                no_improve = 0
+            else:
+                no_improve += 1
+            if no_improve >= self.patience:
+                break
+
+        if self.best_state is not None:
+            self.model.load_state_dict(self.best_state)
+        return self
+
+    def predict(self, X: Any) -> np.ndarray:
+        torch = self.torch
+        X_np = self._to_numpy(X)
+        with torch.no_grad():
+            pred = self.model(torch.from_numpy(X_np))
+        return pred.cpu().numpy().ravel()
+
+
+class TabTransformerClassifier(_TorchTabTransformerBase):
+    """Transformer classifier for tabular data."""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        num_layers: int,
+        dropout: float,
+        learning_rate: float,
+        max_epochs: int,
+        patience: int,
+        batch_size: int,
+        val_split: float,
+        random_state: int,
+    ) -> None:
+        super().__init__(embed_dim, num_heads, num_layers, dropout, learning_rate, max_epochs, patience, batch_size, val_split, random_state)
+        self.n_classes = 0
+
+    def fit(self, X: Any, y: Any) -> "TabTransformerClassifier":
+        torch = self.torch
+        X_np = self._to_numpy(X)
+        y_np = np.asarray(y, dtype=np.int64)
+        self.n_classes = int(np.max(y_np) + 1)
+        X_train, X_val, y_train, y_val = self._make_val_split(X_np, y_np)
+
+        self.input_dim = X_np.shape[1]
+        self.model = self._build_model(self.input_dim, self.n_classes)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+        best_val = float("inf")
+        no_improve = 0
+        for _ in range(self.max_epochs):
+            self.model.train()
+            idx = np.random.permutation(len(X_train))
+            for s in range(0, len(idx), self.batch_size):
+                batch = idx[s : s + self.batch_size]
+                xb = torch.from_numpy(X_train[batch])
+                yb = torch.from_numpy(y_train[batch])
+                logits = self.model(xb)
+                loss = loss_fn(logits, yb)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            self.model.eval()
+            with torch.no_grad():
+                logits = self.model(torch.from_numpy(X_val))
+                val_loss = float(loss_fn(logits, torch.from_numpy(y_val)).item())
+            if val_loss < best_val:
+                best_val = val_loss
+                self.best_state = copy.deepcopy(self.model.state_dict())
+                no_improve = 0
+            else:
+                no_improve += 1
+            if no_improve >= self.patience:
+                break
+
+        if self.best_state is not None:
+            self.model.load_state_dict(self.best_state)
+        return self
+
+    def predict_proba(self, X: Any) -> np.ndarray:
+        torch = self.torch
+        X_np = self._to_numpy(X)
+        with torch.no_grad():
+            logits = self.model(torch.from_numpy(X_np))
+            probs = torch.softmax(logits, dim=1).cpu().numpy()
+        return probs
+
+    def predict(self, X: Any) -> np.ndarray:
+        return np.argmax(self.predict_proba(X), axis=1)
+
+
 class _NumpyDNNBase:
     """Simple NumPy feed-forward network with early stopping."""
 

@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from Easy_Deep_Learning.core.model_engine import SklearnDNNClassifier, SklearnDNNRegressor
+from Easy_Deep_Learning.core.model_engine import SklearnDNNClassifier, SklearnDNNRegressor, TabTransformerClassifier, TabTransformerRegressor
 
 
 @dataclass
@@ -46,6 +46,43 @@ def build_tabular_model(model_type: str, task_type: str, params: dict[str, Any])
             max_epochs=epochs,
             patience=patience,
             batch_size=batch_size,
+            random_state=seed,
+        )
+
+    if model_type == "tab_transformer":
+        embed_dim = int(params.get("embed_dim", 64))
+        num_heads = int(params.get("num_heads", 4))
+        num_layers = int(params.get("num_layers", 2))
+        dropout = float(params.get("dropout", 0.1))
+        lr = float(params.get("learning_rate", 1e-3))
+        epochs = int(params.get("max_epochs", 100))
+        patience = int(params.get("patience", 10))
+        batch_size = int(params.get("batch_size", 64))
+        seed = int(params.get("random_state", 42))
+
+        if task_type == "classification":
+            return TabTransformerClassifier(
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                dropout=dropout,
+                learning_rate=lr,
+                max_epochs=epochs,
+                patience=patience,
+                batch_size=batch_size,
+                val_split=0.2,
+                random_state=seed,
+            )
+        return TabTransformerRegressor(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            dropout=dropout,
+            learning_rate=lr,
+            max_epochs=epochs,
+            patience=patience,
+            batch_size=batch_size,
+            val_split=0.2,
             random_state=seed,
         )
 
