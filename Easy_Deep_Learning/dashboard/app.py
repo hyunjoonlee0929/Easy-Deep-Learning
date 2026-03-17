@@ -396,7 +396,12 @@ def show_run_artifacts(run_path: Path) -> None:
             cols = st.columns(2)
             cols[0].metric("Residual Mean", f"{err_payload.get('residual_mean', 0.0):.4f}")
             cols[1].metric("Residual Std", f"{err_payload.get('residual_std', 0.0):.4f}")
-        with st.expander("Raw Error Analysis JSON", expanded=False):
+        show_raw = st.checkbox(
+            "Show raw error analysis JSON",
+            value=False,
+            key=f"err_raw_{run_path.name}",
+        )
+        if show_raw:
             st.json(err_payload)
         top_errors = err_payload.get("top_errors")
         if top_errors:
