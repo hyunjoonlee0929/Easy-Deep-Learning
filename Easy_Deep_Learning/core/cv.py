@@ -62,7 +62,7 @@ def run_cross_validation(
         # override validation with actual split data for consistency
         X_val_df = test_df.drop(columns=[target_column])
         y_val = test_df[target_column]
-        X_val = preprocessor.transform(X_val_df)
+        X_val = processed.preprocessor.transform(X_val_df)
         X_val = X_val.toarray() if hasattr(X_val, "toarray") else X_val
 
         label_encoder = None
