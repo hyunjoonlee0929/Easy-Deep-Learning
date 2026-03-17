@@ -34,6 +34,32 @@ class ExperimentTracker:
         raw = config_path.read_bytes()
         return hashlib.sha256(raw).hexdigest()
 
+    def file_hash(self, path: Path) -> str:
+        """Compute SHA256 hash for a file."""
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def find_matching_run(self, model_type: str, metadata: dict[str, Any]) -> str | None:
+        """Find a previous run that matches the provided metadata."""
+        if not self.base_dir.exists():
+            return None
+        runs = sorted([p for p in self.base_dir.iterdir() if p.is_dir()], reverse=True)
+        for run_path in runs:
+            meta_path = run_path / "run_metadata.json"
+            if not meta_path.exists():
+                continue
+            try:
+                saved = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if saved.get("model_type") != model_type:
+                continue
+            if any(saved.get(k) != v for k, v in metadata.items()):
+                continue
+            model_info = run_path / "model_info.json"
+            if model_info.exists():
+                return run_path.name
+        return None
+
     def save_yaml(self, path: Path, payload: dict[str, Any]) -> None:
         """Save dictionary as YAML."""
         with path.open("w", encoding="utf-8") as f:

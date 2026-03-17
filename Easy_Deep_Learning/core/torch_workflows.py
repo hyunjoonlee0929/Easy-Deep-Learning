@@ -9,6 +9,7 @@ from typing import Any
 
 import json
 import re
+import inspect
 from io import BytesIO
 
 import numpy as np
@@ -75,11 +76,53 @@ def _build_image_model(
         model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
         return model
 
+    if model_arch == "resnet50":
+        weights = torchvision.models.ResNet50_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.resnet50(weights=weights)
+        if channels != 3:
+            model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+        return model
+
+    if model_arch == "resnet101":
+        weights = torchvision.models.ResNet101_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.resnet101(weights=weights)
+        if channels != 3:
+            model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+        return model
+
+    if model_arch == "resnet152":
+        weights = torchvision.models.ResNet152_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.resnet152(weights=weights)
+        if channels != 3:
+            model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+        return model
+
     if model_arch == "convnext_tiny":
         if not hasattr(torchvision.models, "convnext_tiny"):
             raise RuntimeError("torchvision does not include convnext_tiny. Update torchvision.")
         weights = torchvision.models.ConvNeXt_Tiny_Weights.DEFAULT if use_pretrained else None
         model = torchvision.models.convnext_tiny(weights=weights)
+        if channels != 3:
+            first = model.features[0][0]
+            model.features[0][0] = torch.nn.Conv2d(
+                channels,
+                first.out_channels,
+                kernel_size=first.kernel_size,
+                stride=first.stride,
+                padding=first.padding,
+                bias=first.bias is not None,
+            )
+        model.classifier[2] = torch.nn.Linear(model.classifier[2].in_features, num_classes)
+        return model
+
+    if model_arch == "convnext_base":
+        if not hasattr(torchvision.models, "convnext_base"):
+            raise RuntimeError("torchvision does not include convnext_base. Update torchvision.")
+        weights = torchvision.models.ConvNeXt_Base_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.convnext_base(weights=weights)
         if channels != 3:
             first = model.features[0][0]
             model.features[0][0] = torch.nn.Conv2d(
@@ -109,6 +152,70 @@ def _build_image_model(
                 bias=conv.bias is not None,
             )
         model.heads.head = torch.nn.Linear(model.heads.head.in_features, num_classes)
+        return model
+
+    if model_arch == "vit_l_16":
+        if not hasattr(torchvision.models, "vit_l_16"):
+            raise RuntimeError("torchvision does not include vit_l_16. Update torchvision.")
+        weights = torchvision.models.ViT_L_16_Weights.DEFAULT if use_pretrained else None
+        model = torchvision.models.vit_l_16(weights=weights)
+        if channels != 3:
+            conv = model.conv_proj
+            model.conv_proj = torch.nn.Conv2d(
+                channels,
+                conv.out_channels,
+                kernel_size=conv.kernel_size,
+                stride=conv.stride,
+                padding=conv.padding,
+                bias=conv.bias is not None,
+            )
+        model.heads.head = torch.nn.Linear(model.heads.head.in_features, num_classes)
+        return model
+
+    if hasattr(torchvision.models, model_arch):
+        model_fn = getattr(torchvision.models, model_arch)
+        weights = None
+        if use_pretrained:
+            try:
+                if hasattr(torchvision.models, "get_model_weights"):
+                    weights_enum = torchvision.models.get_model_weights(model_fn)
+                    weights = weights_enum.DEFAULT
+            except Exception:
+                weights = None
+        try:
+            if weights is not None:
+                model = model_fn(weights=weights)
+            else:
+                sig = inspect.signature(model_fn)
+                if "pretrained" in sig.parameters:
+                    model = model_fn(pretrained=use_pretrained)
+                else:
+                    model = model_fn()
+        except Exception:
+            model = model_fn()
+
+        if channels != 3:
+            if hasattr(model, "conv1"):
+                model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            else:
+                raise RuntimeError("Custom model requires 3-channel inputs.")
+
+        if hasattr(model, "fc"):
+            model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+            return model
+        if hasattr(model, "classifier"):
+            if isinstance(model.classifier, torch.nn.Linear):
+                model.classifier = torch.nn.Linear(model.classifier.in_features, num_classes)
+                return model
+            if isinstance(model.classifier, torch.nn.Sequential):
+                for i in reversed(range(len(model.classifier))):
+                    if isinstance(model.classifier[i], torch.nn.Linear):
+                        model.classifier[i] = torch.nn.Linear(model.classifier[i].in_features, num_classes)
+                        return model
+        if hasattr(model, "heads") and hasattr(model.heads, "head"):
+            model.heads.head = torch.nn.Linear(model.heads.head.in_features, num_classes)
+            return model
+
         return model
 
     class SimpleCNN(torch.nn.Module):
@@ -146,6 +253,7 @@ def train_cnn_image(
     data_dir: Path,
     model_arch: str = "cnn",
     use_pretrained: bool = False,
+    reuse_if_exists: bool = True,
 ) -> TorchRunResult:
     """Train a simple CNN on a built-in image dataset."""
     torch = _require_torch()
@@ -155,6 +263,23 @@ def train_cnn_image(
     torch.manual_seed(seed)
 
     model_arch = model_arch.lower()
+    tracker = ExperimentTracker(base_dir=Path("runs"))
+    metadata = {
+        "dataset_name": dataset_name,
+        "model_arch": model_arch,
+        "use_pretrained": use_pretrained,
+        "epochs": epochs,
+        "lr": lr,
+        "batch_size": batch_size,
+        "seed": seed,
+    }
+    if reuse_if_exists:
+        existing = tracker.find_matching_run("cnn", metadata)
+        if existing:
+            run_path = Path("runs") / existing
+            metrics_path = run_path / "metrics.json"
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
+            return TorchRunResult(run_id=existing, run_path=run_path, metrics=metrics)
 
     if dataset_name == "MNIST":
         channels = 1
@@ -179,7 +304,7 @@ def train_cnn_image(
     else:
         raise ValueError("Unsupported dataset")
 
-    resize = 224 if model_arch in ["resnet18", "convnext_tiny", "vit_b_16"] else input_size
+    resize = 224 if model_arch in ["resnet18", "resnet50", "resnet101", "resnet152", "convnext_tiny", "convnext_base", "vit_b_16", "vit_l_16"] else input_size
     transform = transforms.Compose([
         transforms.Resize(resize),
         transforms.ToTensor(),
@@ -225,7 +350,6 @@ def train_cnn_image(
 
     acc = correct / max(total, 1)
 
-    tracker = ExperimentTracker(base_dir=Path("runs"))
     run_id, run_path = tracker.create_run(model_type="cnn")
     class_names = getattr(train_ds, "classes", None)
     if class_names is None:
@@ -242,6 +366,13 @@ def train_cnn_image(
             "input_size": resize,
             "channels": channels,
             "use_pretrained": use_pretrained,
+        },
+    )
+    tracker.save_json(
+        run_path / "run_metadata.json",
+        {
+            "model_type": "cnn",
+            **metadata,
         },
     )
     tracker.save_json(run_path / "model_info.json", {"model_type": "cnn", "dataset": dataset_name, "model_arch": model_arch})
@@ -641,6 +772,7 @@ def train_rnn_text(
     bpe: bool = False,
     bpe_vocab_size: int = 200,
     model_arch: str = "gru",
+    reuse_if_exists: bool = True,
 ) -> TorchRunResult:
     """Train a simple RNN classifier on a CSV dataset."""
     torch = _require_torch()
@@ -650,6 +782,33 @@ def train_rnn_text(
         if dataset_name != "AG_NEWS_SAMPLE":
             raise ValueError("Provide --data for custom text dataset or use AG_NEWS_SAMPLE.")
         data_path = Path("Easy_Deep_Learning/data/text_sample.csv")
+
+    tracker = ExperimentTracker(base_dir=Path("runs"))
+    data_hash = tracker.file_hash(Path(data_path))
+    metadata = {
+        "dataset_name": dataset_name,
+        "data_hash": data_hash,
+        "text_column": text_column,
+        "label_column": label_column,
+        "max_vocab": max_vocab,
+        "max_len": max_len,
+        "stopwords": stopwords,
+        "ngram": ngram,
+        "bpe": bpe,
+        "bpe_vocab_size": bpe_vocab_size,
+        "model_arch": model_arch,
+        "epochs": epochs,
+        "lr": lr,
+        "batch_size": batch_size,
+        "seed": seed,
+    }
+    if reuse_if_exists:
+        existing = tracker.find_matching_run("rnn", metadata)
+        if existing:
+            run_path = Path("runs") / existing
+            metrics_path = run_path / "metrics.json"
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
+            return TorchRunResult(run_id=existing, run_path=run_path, metrics=metrics)
 
     texts, labels = _load_text_dataset(data_path, text_column, label_column)
     bpe_merges = train_bpe(texts, bpe_vocab_size) if bpe else None
@@ -767,7 +926,6 @@ def train_rnn_text(
             total += int(yb.shape[0])
     acc = correct / max(total, 1)
 
-    tracker = ExperimentTracker(base_dir=Path("runs"))
     run_id, run_path = tracker.create_run(model_type="rnn")
     tracker.save_json(run_path / "metrics.json", {"test_accuracy": acc})
     tracker.save_json(
@@ -786,6 +944,13 @@ def train_rnn_text(
             "bpe_vocab_size": bpe_vocab_size,
             "model_arch": model_arch,
             "label_classes": label_encoder.classes_.tolist(),
+        },
+    )
+    tracker.save_json(
+        run_path / "run_metadata.json",
+        {
+            "model_type": "rnn",
+            **metadata,
         },
     )
     tracker.save_json(run_path / "model_info.json", {"model_type": "rnn", "dataset": dataset_name, "model_arch": model_arch})

@@ -90,9 +90,12 @@ def train_and_save(
     model_type: str,
     seed: int,
     model_params: dict[str, Any] | None = None,
+    reuse_if_exists: bool = True,
 ) -> RunResult:
     """Run training pipeline and persist all artifacts."""
     set_global_seed(seed)
+
+    tracker = ExperimentTracker(base_dir=Path("runs"))
 
     cfg = load_yaml(config_path)
     dnn_cfg = cfg.get("dnn", {})
@@ -119,6 +122,23 @@ def train_and_save(
         }
         if not params:
             params = suggested_params
+
+    cfg_hash = tracker.config_hash(config_path)
+    data_hash = tracker.file_hash(data_path)
+    metadata = {
+        "config_hash": cfg_hash,
+        "data_hash": data_hash,
+        "task_type": task_type,
+        "target_column": target_column,
+        "model_params": params,
+    }
+    if reuse_if_exists:
+        existing = tracker.find_matching_run(resolved_model_type, metadata)
+        if existing:
+            run_path = Path("runs") / existing
+            metrics_path = run_path / "metrics.json"
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
+            return RunResult(run_id=existing, run_path=run_path, metrics=metrics)
 
     preprocessor = AutoPreprocessor(test_size=0.2, random_state=seed)
     processed = preprocessor.fit_transform(df=df, target_column=target_column, task_type=task_type)
@@ -196,10 +216,8 @@ def train_and_save(
             label_encoder=label_encoder,
         )
 
-    tracker = ExperimentTracker(base_dir=Path("runs"))
     run_id, run_path = tracker.create_run(model_type=resolved_model_type)
 
-    cfg_hash = tracker.config_hash(config_path)
     snapshot = {
         "project": "Easy Deep Learning",
         "run_id": run_id,
@@ -208,6 +226,7 @@ def train_and_save(
         "seed": seed,
         "input": {
             "data_path": str(data_path.resolve()),
+            "data_hash": data_hash,
             "target_column": target_column,
             "task_type": task_type,
             "model_type": resolved_model_type,
@@ -223,6 +242,13 @@ def train_and_save(
     tracker.save_json(run_path / "metrics.json", model_result.metrics)
     tracker.save_json(run_path / "feature_names.json", processed.feature_names)
     tracker.save_json(run_path / "model_params.json", params)
+    tracker.save_json(
+        run_path / "run_metadata.json",
+        {
+            "model_type": resolved_model_type,
+            **metadata,
+        },
+    )
     if auto_choice is not None:
         tracker.save_json(run_path / "auto_recommendation.json", auto_choice)
     tracker.save_text(run_path / "config_hash.txt", cfg_hash)

@@ -573,6 +573,7 @@ with tabular_tab:
                     params = model_param_controls(model_type)
 
             with st.expander("Step 3: Run & Results", expanded=True):
+                reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="tab_reuse")
                 if st.button("학습 실행", type="primary"):
                     tmp_train_path = Path("/tmp/easy_dl_train.csv")
                     train_df.to_csv(tmp_train_path, index=False)
@@ -586,6 +587,7 @@ with tabular_tab:
                             model_type=model_type,
                             seed=int(seed),
                             model_params=params,
+                            reuse_if_exists=bool(reuse_existing),
                         )
 
                     st.success(f"완료: run_id={result.run_id}")
@@ -836,9 +838,22 @@ with image_tab:
                     index=dataset_default,
                     key="img_dataset",
                 )
-            arch_options = ["cnn", "resnet18", "convnext_tiny", "vit_b_16"]
+            arch_options = [
+                "cnn",
+                "resnet18",
+                "resnet50",
+                "resnet101",
+                "resnet152",
+                "convnext_tiny",
+                "convnext_base",
+                "vit_b_16",
+                "vit_l_16",
+                "custom",
+            ]
             arch_default = arch_options.index(image_defaults.get("image_arch")) if image_defaults.get("image_arch") in arch_options else 0
             model_arch = st.selectbox("Model architecture", options=arch_options, index=arch_default, key="img_arch")
+            if model_arch == "custom":
+                model_arch = st.text_input("Custom torchvision model name", value="resnet50", key="img_arch_custom")
             use_pretrained = st.checkbox("Use pretrained weights", value=True, key="img_pretrained")
 
             with st.expander("Step 2: Training Params", expanded=True):
@@ -848,6 +863,7 @@ with image_tab:
                 seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="img_seed")
 
             with st.expander("Step 3: Train & Results", expanded=True):
+                reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="img_reuse")
                 if st.button("Train CNN", type="primary"):
                     from Easy_Deep_Learning.core.torch_workflows import train_cnn_image
 
@@ -861,6 +877,7 @@ with image_tab:
                             data_dir=Path(data_dir),
                             model_arch=model_arch,
                             use_pretrained=bool(use_pretrained),
+                            reuse_if_exists=bool(reuse_existing),
                         )
                     st.success(f"완료: run_id={result.run_id}")
                     st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
@@ -982,9 +999,32 @@ with image_tab:
                 st.error(f"COCO load failed: {exc}")
                 st.info("Built-in Samples로 전환해 테스트하세요.")
 
-        model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_model")
+        model_choice = st.selectbox(
+            "Model",
+            options=[
+                "YOLOv8n (ultralytics)",
+                "YOLOv8s (ultralytics)",
+                "YOLOv8m (ultralytics)",
+                "YOLOv8l (ultralytics)",
+                "YOLOv8x (ultralytics)",
+                "Faster R-CNN (torchvision)",
+            ],
+            key="det_model",
+        )
         conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_conf")
-        yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_weights")
+        yolo_weights = "yolov8n.pt"
+        if model_choice.startswith("YOLOv8"):
+            yolo_map = {
+                "YOLOv8n (ultralytics)": "yolov8n.pt",
+                "YOLOv8s (ultralytics)": "yolov8s.pt",
+                "YOLOv8m (ultralytics)": "yolov8m.pt",
+                "YOLOv8l (ultralytics)": "yolov8l.pt",
+                "YOLOv8x (ultralytics)": "yolov8x.pt",
+            }
+            yolo_weights = yolo_map.get(model_choice, "yolov8n.pt")
+            custom_yolo = st.text_input("Custom YOLO weights (optional)", value=yolo_weights, key="det_weights")
+            if custom_yolo:
+                yolo_weights = custom_yolo
 
         if image is not None:
             st.image(image, caption="Input", use_container_width=True)
@@ -1003,103 +1043,166 @@ with image_tab:
             st.info("이미지를 준비하세요.")
 
 with text_tab:
-    st.subheader("Text Models (RNN)")
-    data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="txt_cache")
+    text_rnn_tab, text_xfm_tab = st.tabs(["RNN", "Transformer"])
 
-    text_defaults = quick_preset_state(quick_action)
-    if quick_action == "Quick Text Demo":
-        st.info("Quick Text Demo preset applied.")
-    text_options = ["AG_NEWS_SAMPLE", "SST2_SAMPLE", "TREC_SAMPLE", "Upload CSV"]
-    text_default = text_options.index(text_defaults.get("text_dataset")) if text_defaults.get("text_dataset") in text_options else 0
+    with text_rnn_tab:
+        st.subheader("Text Models (RNN)")
+        data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="txt_cache")
 
-    with st.expander("Step 1: Data", expanded=True):
+        text_defaults = quick_preset_state(quick_action)
+        if quick_action == "Quick Text Demo":
+            st.info("Quick Text Demo preset applied.")
+        text_options = ["AG_NEWS_SAMPLE", "SST2_SAMPLE", "TREC_SAMPLE", "Upload CSV"]
+        text_default = text_options.index(text_defaults.get("text_dataset")) if text_defaults.get("text_dataset") in text_options else 0
+
+        with st.expander("Step 1: Data", expanded=True):
+            dataset_choice = st.selectbox(
+                "Dataset",
+                options=text_options,
+                index=text_default,
+                key="txt_dataset",
+            )
+            if dataset_choice == "Upload CSV":
+                uploaded_text = st.file_uploader("Upload text CSV", type=["csv"], key="text_upload")
+                text_df = pd.read_csv(uploaded_text) if uploaded_text else None
+            elif dataset_choice == "SST2_SAMPLE":
+                text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample_sst2.csv"))
+            elif dataset_choice == "TREC_SAMPLE":
+                text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample_trec.csv"))
+            else:
+                text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample.csv"))
+
+            text_col = st.text_input("Text column", value="text", key="txt_col")
+            label_col = st.text_input("Label column", value="label", key="lbl_col")
+            max_vocab = st.number_input("Max vocab", min_value=100, max_value=50000, value=5000, step=100, key="txt_vocab")
+            max_len = st.number_input("Max length", min_value=10, max_value=400, value=100, step=10, key="txt_len")
+
+            st.subheader("Text Preview")
+            if text_df is not None:
+                preview_cols = [c for c in [text_col, label_col] if c in text_df.columns]
+                st.dataframe(text_df[preview_cols].head(20), use_container_width=True)
+            else:
+                st.info("텍스트 데이터가 없습니다.")
+
+        with st.expander("Step 2: Preprocessing & Model", expanded=True):
+            st.subheader("Preprocessing")
+            stopwords = st.checkbox("Remove stopwords", value=False, key="txt_stop")
+            ngram = st.number_input("n-gram (1-3)", min_value=1, max_value=3, value=1, step=1, key="txt_ngram")
+            bpe = st.checkbox("Use BPE", value=False, key="txt_bpe")
+            bpe_vocab_size = st.number_input("BPE vocab size", min_value=50, max_value=2000, value=200, step=50, key="txt_bpe_vocab")
+            text_arch_options = ["gru", "lstm", "textcnn", "transformer"]
+            text_arch_default = text_arch_options.index(text_defaults.get("text_arch")) if text_defaults.get("text_arch") in text_arch_options else 0
+            model_arch = st.selectbox("Model architecture", options=text_arch_options, index=text_arch_default, key="txt_arch")
+
+            epochs = st.number_input("Epochs", min_value=1, max_value=20, value=3, step=1, key="txt_epochs")
+            lr = st.number_input("Learning rate", min_value=1e-4, max_value=1e-1, value=1e-3, format="%.5f", key="txt_lr")
+            batch_size = st.number_input("Batch size", min_value=16, max_value=512, value=64, step=16, key="txt_batch")
+            seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="txt_seed")
+
+        with st.expander("Step 3: Train & Test", expanded=True):
+            reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="txt_reuse")
+            if st.button("Train RNN", type="primary"):
+                from Easy_Deep_Learning.core.torch_workflows import train_rnn_text
+
+                if text_df is None:
+                    st.error("텍스트 CSV를 선택하세요.")
+                else:
+                    tmp_text_path = Path("/tmp/easy_dl_text.csv")
+                    text_df.to_csv(tmp_text_path, index=False)
+
+                    with st.spinner("Training RNN..."):
+                        result = train_rnn_text(
+                            dataset_name=(
+                                dataset_choice if dataset_choice != "Upload CSV" else "CUSTOM"
+                            ),
+                            epochs=int(epochs),
+                            lr=float(lr),
+                            batch_size=int(batch_size),
+                            seed=int(seed),
+                            data_dir=Path(data_dir),
+                            data_path=tmp_text_path,
+                            text_column=text_col,
+                            label_column=label_col,
+                            max_vocab=int(max_vocab),
+                            max_len=int(max_len),
+                            stopwords=bool(stopwords),
+                            ngram=int(ngram),
+                            bpe=bool(bpe),
+                            bpe_vocab_size=int(bpe_vocab_size),
+                            model_arch=model_arch,
+                            reuse_if_exists=bool(reuse_existing),
+                        )
+                    st.success(f"완료: run_id={result.run_id}")
+                    st.metric("test_accuracy", f"{result.metrics['test_accuracy']:.4f}")
+                    st.code(str(result.run_path.resolve()))
+
+            st.subheader("Test Saved RNN")
+            rnn_runs = [rid for rid in run_ids if rid.endswith("_rnn")]
+            selected_rnn = st.selectbox("RNN run_id", options=rnn_runs, key="rnn_run")
+            if st.button("Test RNN", type="secondary") and selected_rnn:
+                from Easy_Deep_Learning.core.torch_workflows import test_rnn_text
+
+                with st.spinner("Testing RNN..."):
+                    result = test_rnn_text(selected_rnn, data_path=None)
+                st.metric("test_accuracy", f"{result['test_accuracy']:.4f}")
+
+    with text_xfm_tab:
+        st.subheader("Text Models (Transformer)")
+        model_choices = [
+            "bert-base-uncased",
+            "roberta-base",
+            "distilbert-base-uncased",
+            "deberta-v3-base",
+            "deberta-v3-large",
+            "custom",
+        ]
+        model_name = st.selectbox("Model", options=model_choices, key="txt_xfm_model")
+        if model_name == "custom":
+            model_name = st.text_input("Custom Hugging Face model", value="bert-base-uncased", key="txt_xfm_custom")
         dataset_choice = st.selectbox(
             "Dataset",
-            options=text_options,
-            index=text_default,
-            key="txt_dataset",
+            options=["SST2_SAMPLE", "TREC_SAMPLE", "Upload CSV"],
+            key="txt_xfm_dataset",
         )
         if dataset_choice == "Upload CSV":
-            uploaded_text = st.file_uploader("Upload text CSV", type=["csv"], key="text_upload")
+            uploaded_text = st.file_uploader("Upload text CSV", type=["csv"], key="text_upload_xfm")
             text_df = pd.read_csv(uploaded_text) if uploaded_text else None
         elif dataset_choice == "SST2_SAMPLE":
             text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample_sst2.csv"))
-        elif dataset_choice == "TREC_SAMPLE":
+        else:
             text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample_trec.csv"))
-        else:
-            text_df = pd.read_csv(Path("Easy_Deep_Learning/data/text_sample.csv"))
 
-        text_col = st.text_input("Text column", value="text", key="txt_col")
-        label_col = st.text_input("Label column", value="label", key="lbl_col")
-        max_vocab = st.number_input("Max vocab", min_value=100, max_value=50000, value=5000, step=100, key="txt_vocab")
-        max_len = st.number_input("Max length", min_value=10, max_value=400, value=100, step=10, key="txt_len")
+        text_col = st.text_input("Text column", value="text", key="txt_xfm_col")
+        label_col = st.text_input("Label column", value="label", key="lbl_xfm_col")
+        epochs = st.number_input("Epochs", min_value=1, max_value=10, value=2, step=1, key="txt_xfm_epochs")
+        lr = st.number_input("Learning rate", min_value=1e-6, max_value=1e-3, value=2e-5, format="%.6f", key="txt_xfm_lr")
+        batch_size = st.number_input("Batch size", min_value=4, max_value=64, value=8, step=4, key="txt_xfm_batch")
+        seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="txt_xfm_seed")
 
-        st.subheader("Text Preview")
-        if text_df is not None:
-            preview_cols = [c for c in [text_col, label_col] if c in text_df.columns]
-            st.dataframe(text_df[preview_cols].head(20), use_container_width=True)
-        else:
-            st.info("텍스트 데이터가 없습니다.")
-
-    with st.expander("Step 2: Preprocessing & Model", expanded=True):
-        st.subheader("Preprocessing")
-        stopwords = st.checkbox("Remove stopwords", value=False, key="txt_stop")
-        ngram = st.number_input("n-gram (1-3)", min_value=1, max_value=3, value=1, step=1, key="txt_ngram")
-        bpe = st.checkbox("Use BPE", value=False, key="txt_bpe")
-        bpe_vocab_size = st.number_input("BPE vocab size", min_value=50, max_value=2000, value=200, step=50, key="txt_bpe_vocab")
-        text_arch_options = ["gru", "lstm", "textcnn", "transformer"]
-        text_arch_default = text_arch_options.index(text_defaults.get("text_arch")) if text_defaults.get("text_arch") in text_arch_options else 0
-        model_arch = st.selectbox("Model architecture", options=text_arch_options, index=text_arch_default, key="txt_arch")
-
-        epochs = st.number_input("Epochs", min_value=1, max_value=20, value=3, step=1, key="txt_epochs")
-        lr = st.number_input("Learning rate", min_value=1e-4, max_value=1e-1, value=1e-3, format="%.5f", key="txt_lr")
-        batch_size = st.number_input("Batch size", min_value=16, max_value=512, value=64, step=16, key="txt_batch")
-        seed = st.number_input("Seed", min_value=0, max_value=999999, value=42, step=1, key="txt_seed")
-
-    with st.expander("Step 3: Train & Test", expanded=True):
-        if st.button("Train RNN", type="primary"):
-            from Easy_Deep_Learning.core.torch_workflows import train_rnn_text
-
+        reuse_existing = st.checkbox("Reuse matching run if available", value=True, key="txt_xfm_reuse")
+        if st.button("Train Transformer", type="primary"):
             if text_df is None:
                 st.error("텍스트 CSV를 선택하세요.")
             else:
-                tmp_text_path = Path("/tmp/easy_dl_text.csv")
+                tmp_text_path = Path("/tmp/easy_dl_text_transformer.csv")
                 text_df.to_csv(tmp_text_path, index=False)
+                from Easy_Deep_Learning.core.text_transformers import train_text_transformer
 
-                with st.spinner("Training RNN..."):
-                    result = train_rnn_text(
-                        dataset_name=(
-                            dataset_choice if dataset_choice != "Upload CSV" else "CUSTOM"
-                        ),
+                with st.spinner("Training Transformer..."):
+                    result = train_text_transformer(
+                        data_path=tmp_text_path,
+                        text_column=text_col,
+                        label_column=label_col,
+                        model_name=model_name,
                         epochs=int(epochs),
                         lr=float(lr),
                         batch_size=int(batch_size),
                         seed=int(seed),
-                        data_dir=Path(data_dir),
-                        data_path=tmp_text_path,
-                        text_column=text_col,
-                        label_column=label_col,
-                        max_vocab=int(max_vocab),
-                        max_len=int(max_len),
-                        stopwords=bool(stopwords),
-                        ngram=int(ngram),
-                        bpe=bool(bpe),
-                        bpe_vocab_size=int(bpe_vocab_size),
-                        model_arch=model_arch,
+                        reuse_if_exists=bool(reuse_existing),
                     )
                 st.success(f"완료: run_id={result.run_id}")
-                st.metric("test_accuracy", f"{result.metrics['test_accuracy']:.4f}")
+                st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
                 st.code(str(result.run_path.resolve()))
-
-        st.subheader("Test Saved RNN")
-        rnn_runs = [rid for rid in run_ids if rid.endswith("_rnn")]
-        selected_rnn = st.selectbox("RNN run_id", options=rnn_runs, key="rnn_run")
-        if st.button("Test RNN", type="secondary") and selected_rnn:
-            from Easy_Deep_Learning.core.torch_workflows import test_rnn_text
-
-            with st.spinner("Testing RNN..."):
-                result = test_rnn_text(selected_rnn, data_path=None)
-            st.metric("test_accuracy", f"{result['test_accuracy']:.4f}")
 
 with audio_tab:
     st.subheader("Audio Demo (WAV)")
@@ -1290,11 +1393,34 @@ with video_tab:
         from Easy_Deep_Learning.core.detection import detect_video_bytes
         vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
         use_builtin = st.checkbox("Use built-in sample video (requires opencv)", value=False, key="det_video_builtin")
-        model_choice = st.selectbox("Model", options=["YOLOv8n (ultralytics)", "Faster R-CNN (torchvision)"], key="det_video_model")
+        model_choice = st.selectbox(
+            "Model",
+            options=[
+                "YOLOv8n (ultralytics)",
+                "YOLOv8s (ultralytics)",
+                "YOLOv8m (ultralytics)",
+                "YOLOv8l (ultralytics)",
+                "YOLOv8x (ultralytics)",
+                "Faster R-CNN (torchvision)",
+            ],
+            key="det_video_model",
+        )
         conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_video_conf")
         frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
         max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
-        yolo_weights = st.text_input("YOLO weights (optional)", value="yolov8n.pt", key="det_video_weights")
+        yolo_weights = "yolov8n.pt"
+        if model_choice.startswith("YOLOv8"):
+            yolo_map = {
+                "YOLOv8n (ultralytics)": "yolov8n.pt",
+                "YOLOv8s (ultralytics)": "yolov8s.pt",
+                "YOLOv8m (ultralytics)": "yolov8m.pt",
+                "YOLOv8l (ultralytics)": "yolov8l.pt",
+                "YOLOv8x (ultralytics)": "yolov8x.pt",
+            }
+            yolo_weights = yolo_map.get(model_choice, "yolov8n.pt")
+            custom_yolo = st.text_input("Custom YOLO weights (optional)", value=yolo_weights, key="det_video_weights")
+            if custom_yolo:
+                yolo_weights = custom_yolo
 
         if use_builtin:
             try:
