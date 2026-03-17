@@ -33,7 +33,7 @@ with st.sidebar.expander("How it works", expanded=False):
     st.write("Preset 데이터/모델 설정을 바로 불러옵니다. 각 탭에서 수정 가능합니다.")
 quick_action = st.sidebar.radio(
     "Choose a quick workflow",
-    options=["None", "Quick Classification", "Quick Regression", "Quick Image Demo", "Quick Text Demo"],
+    options=["None", "Quick Tabular Classification", "Quick Tabular Regression", "Quick Image Models", "Quick Text Models"],
     index=0,
 )
 if quick_action != "None":
@@ -309,7 +309,28 @@ def show_run_artifacts(run_path: Path) -> None:
     ai_report_path = run_path / "ai_report.json"
     if ai_report_path.exists():
         st.subheader("AI Report")
-        st.json(json.loads(ai_report_path.read_text(encoding="utf-8")))
+        payload = json.loads(ai_report_path.read_text(encoding="utf-8"))
+        summary = payload.get("summary")
+        strengths = payload.get("strengths", [])
+        risks = payload.get("risks", [])
+        next_steps = payload.get("next_steps", [])
+        if summary:
+            st.markdown(f"**Summary**: {summary}")
+        if strengths:
+            st.markdown("**Strengths**")
+            for item in strengths:
+                st.write(f"- {item}")
+        if risks:
+            st.markdown("**Risks**")
+            for item in risks:
+                st.write(f"- {item}")
+        if next_steps:
+            st.markdown("**Next Steps**")
+            for item in next_steps:
+                st.write(f"- {item}")
+        show_raw = st.checkbox("Show raw AI report JSON", value=False, key=f"ai_raw_{run_path.name}")
+        if show_raw:
+            st.json(payload)
 
     rec_path = run_path / "recommendations.json"
     if rec_path.exists():
@@ -317,8 +338,9 @@ def show_run_artifacts(run_path: Path) -> None:
         rec_payload = json.loads(rec_path.read_text(encoding="utf-8"))
         priority = rec_payload.get("priority", [])
         if priority:
-            st.write("Priority:")
-            st.write(priority)
+            st.markdown("**Priority**")
+            for item in priority:
+                st.write(f"- {item}")
         show_all = st.checkbox(
             "Show all recommendations",
             value=False,
@@ -342,7 +364,9 @@ def show_run_artifacts(run_path: Path) -> None:
                     st.warning(msg)
                 else:
                     st.info(msg)
-        st.json(quality_payload)
+        show_raw = st.checkbox("Show raw data quality JSON", value=False, key=f"quality_raw_{run_path.name}")
+        if show_raw:
+            st.json(quality_payload)
 
     drift_path = run_path / "drift_report.json"
     if drift_path.exists():
@@ -359,12 +383,17 @@ def show_run_artifacts(run_path: Path) -> None:
                     st.warning(msg)
                 else:
                     st.info(msg)
-        st.json(drift_payload)
+        show_raw = st.checkbox("Show raw drift JSON", value=False, key=f"drift_raw_{run_path.name}")
+        if show_raw:
+            st.json(drift_payload)
 
     uncertainty_path = run_path / "uncertainty.json"
     if uncertainty_path.exists():
         st.subheader("Uncertainty")
-        st.json(json.loads(uncertainty_path.read_text(encoding="utf-8")))
+        payload = json.loads(uncertainty_path.read_text(encoding="utf-8"))
+        show_raw = st.checkbox("Show raw uncertainty JSON", value=False, key=f"unc_raw_{run_path.name}")
+        if show_raw:
+            st.json(payload)
 
     best_params_path = run_path / "best_params.json"
     if best_params_path.exists():
@@ -499,24 +528,24 @@ def show_run_artifacts(run_path: Path) -> None:
 
 def quick_preset_state(action: str) -> dict[str, Any]:
     """Return preset UI defaults for quick workflows."""
-    if action == "Quick Classification":
+    if action == "Quick Tabular Classification":
         return {
             "task_type": "classification",
             "model_type": "rf",
             "preset": "Breast Cancer (classification)",
         }
-    if action == "Quick Regression":
+    if action == "Quick Tabular Regression":
         return {
             "task_type": "regression",
             "model_type": "gbm",
             "preset": "Diabetes (regression)",
         }
-    if action == "Quick Image Demo":
+    if action == "Quick Image Models":
         return {
             "image_dataset": "MNIST",
             "image_arch": "cnn",
         }
-    if action == "Quick Text Demo":
+    if action == "Quick Text Models":
         return {
             "text_dataset": "SST2_SAMPLE",
             "text_arch": "gru",
@@ -550,7 +579,7 @@ with tabular_tab:
             "결과는 runs/ 폴더에 저장",
         ])
         quick_defaults = quick_preset_state(quick_action)
-        if quick_action in ["Quick Classification", "Quick Regression"]:
+        if quick_action in ["Quick Tabular Classification", "Quick Tabular Regression"]:
             st.info("Quick preset applied. Data source set to Preset Dataset.")
             st.session_state["train_source_default"] = "Preset Dataset"
             st.session_state["train_preset_default"] = quick_defaults.get("preset")
@@ -892,7 +921,7 @@ with image_tab:
         if not torch_available():
             st.info("Torch/torchvision이 설치되어 있지 않아 이미지 모델을 사용할 수 없습니다.")
         else:
-            if quick_action == "Quick Image Demo":
+            if quick_action == "Quick Image Models":
                 st.info("Quick Image Demo preset applied.")
             image_defaults = quick_preset_state(quick_action)
             with st.expander("Step 1: Dataset & Model", expanded=True):
@@ -1135,7 +1164,7 @@ with text_tab:
         data_dir = st.text_input("Dataset cache dir", value="/tmp/easy_dl", key="txt_cache")
 
         text_defaults = quick_preset_state(quick_action)
-        if quick_action == "Quick Text Demo":
+        if quick_action == "Quick Text Models":
             st.info("Quick Text Demo preset applied.")
         text_options = ["AG_NEWS_SAMPLE", "SST2_SAMPLE", "TREC_SAMPLE", "Upload CSV"]
         text_default = text_options.index(text_defaults.get("text_dataset")) if text_defaults.get("text_dataset") in text_options else 0
