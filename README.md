@@ -1,5 +1,5 @@
 # Easy Deep Learning
-## End-to-end AI platform for reproducible ML workflows and multi-modal experimentation
+
 Easy Deep Learning은 단일 모델 데모가 아니라, 데이터 입력부터 학습/평가/해석/리포팅/서빙까지 연결하는 **실행형 AI 플랫폼**입니다.  
 목표는 사용자가 복잡한 ML/딥러닝 실험을 빠르게 반복하고, 결과를 해석 가능하게 관리하며, 실제 서비스 형태(API/대시보드)로 전환할 수 있게 하는 것입니다.
 
