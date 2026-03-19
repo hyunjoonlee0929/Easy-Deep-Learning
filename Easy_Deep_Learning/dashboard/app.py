@@ -1153,6 +1153,8 @@ if active_tab == "Image":
                     st.image(images, caption=labels, width=120)
 
                 st.subheader("Test Saved CNN")
+                runs_dir = Path("runs")
+                run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
                 cnn_runs = [rid for rid in run_ids if rid.endswith("_cnn")]
                 selected_cnn = st.selectbox("CNN run_id", options=cnn_runs, key="cnn_run")
                 if st.button("Test CNN", type="secondary") and selected_cnn:
@@ -1399,6 +1401,8 @@ if active_tab == "Text Models":
                     st.code(str(result.run_path.resolve()))
 
             st.subheader("Test Saved RNN")
+            runs_dir = Path("runs")
+            run_ids = sorted([p.name for p in runs_dir.iterdir() if p.is_dir()], reverse=True) if runs_dir.exists() else []
             rnn_runs = [rid for rid in run_ids if rid.endswith("_rnn")]
             selected_rnn = st.selectbox("RNN run_id", options=rnn_runs, key="rnn_run")
             if st.button("Test RNN", type="secondary") and selected_rnn:
