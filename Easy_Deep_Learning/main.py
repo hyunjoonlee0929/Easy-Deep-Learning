@@ -156,6 +156,20 @@ def build_parser() -> argparse.ArgumentParser:
     ft_text.add_argument("--batch-size", type=int, default=8)
     ft_text.add_argument("--seed", type=int, default=42)
 
+    reg_list = subparsers.add_parser("registry-list", help="List model registry entries and tags")
+    reg_list.add_argument("--runs-dir", type=Path, default=Path("runs"))
+
+    reg_resolve = subparsers.add_parser("registry-resolve", help="Resolve a registry tag to run_id")
+    reg_resolve.add_argument("--tag", type=str, required=True)
+    reg_resolve.add_argument("--runs-dir", type=Path, default=Path("runs"))
+
+    reg_promote = subparsers.add_parser("registry-promote", help="Promote a run to production tag")
+    reg_promote.add_argument("--run-id", type=str, required=True)
+    reg_promote.add_argument("--run-type", type=str, default=None)
+    reg_promote.add_argument("--task-type", type=str, default=None)
+    reg_promote.add_argument("--model-type", type=str, default=None)
+    reg_promote.add_argument("--runs-dir", type=Path, default=Path("runs"))
+
     return parser
 
 
@@ -188,6 +202,9 @@ def main() -> None:
             "run_path": str(result.run_path.resolve()),
             "metrics": result.metrics,
         }
+        standard_meta = result.run_path / "run_metadata.standard.json"
+        if standard_meta.exists():
+            payload["run_metadata_standard"] = str(standard_meta.resolve())
         print(json.dumps(payload, indent=2))
         return
 
@@ -443,6 +460,45 @@ def main() -> None:
             "metrics": result.metrics,
         }
         print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "registry-list":
+        from Easy_Deep_Learning.core.model_registry_layer import ModelRegistry
+
+        payload = ModelRegistry(runs_dir=args.runs_dir).list_registry()
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "registry-resolve":
+        from Easy_Deep_Learning.core.model_registry_layer import ModelRegistry
+
+        run_id = ModelRegistry(runs_dir=args.runs_dir).resolve_tag(args.tag)
+        print(json.dumps({"tag": args.tag, "run_id": run_id}, indent=2))
+        return
+
+    if args.command == "registry-promote":
+        from Easy_Deep_Learning.core.model_registry_layer import ModelRegistry
+
+        run_type = args.run_type
+        task_type = args.task_type
+        model_type = args.model_type
+        run_path = args.runs_dir / args.run_id
+        meta_path = run_path / "run_metadata.standard.json"
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            run_type = run_type or meta.get("run_type")
+            task_type = task_type or meta.get("task_type")
+            model_type = model_type or meta.get("model_type")
+        if not run_type or not task_type:
+            raise SystemExit("run_type and task_type are required if run metadata is unavailable.")
+
+        tag = ModelRegistry(runs_dir=args.runs_dir).promote_to_production(
+            run_id=args.run_id,
+            run_type=run_type,
+            task_type=task_type,
+            model_type=model_type,
+        )
+        print(json.dumps({"run_id": args.run_id, "production_tag": tag}, indent=2))
         return
 
     parser.error("Unknown command")

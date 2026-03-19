@@ -10,6 +10,8 @@ import json
 import numpy as np
 import pandas as pd
 
+from Easy_Deep_Learning.core.mlops import finalize_run_tracking
+
 
 @dataclass
 class TextRunResult:
@@ -129,5 +131,18 @@ def train_text_transformer(
     model.save_pretrained(run_path / "model")
     tokenizer.save_pretrained(run_path / "tokenizer")
     tracker.save_json(run_path / "labels.json", {"labels": label_set})
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="text",
+        task_type="classification",
+        model_type=run_type,
+        dataset_hash=data_hash,
+        metrics={k: float(v) for k, v in eval_metrics.items()},
+        model_params=metadata,
+        model_artifact="model",
+        config_hash=None,
+        seed=seed,
+        extra={"model_name": model_name},
+    )
 
     return TextRunResult(run_id=run_id, run_path=run_path, metrics={"accuracy": float(eval_metrics.get("eval_accuracy", 0.0)), "f1_weighted": float(eval_metrics.get("eval_f1_weighted", 0.0))})

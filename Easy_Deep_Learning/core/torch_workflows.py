@@ -16,6 +16,7 @@ import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
+from Easy_Deep_Learning.core.mlops import finalize_run_tracking
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -376,7 +377,21 @@ def train_cnn_image(
         },
     )
     tracker.save_json(run_path / "model_info.json", {"model_type": "cnn", "dataset": dataset_name, "model_arch": model_arch})
-    _save_torch_model(model, run_path)
+    model_path = _save_torch_model(model, run_path)
+    dataset_hash = tracker.hash_payload({"dataset_name": dataset_name, "data_dir": str(data_dir)})
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="image",
+        task_type="classification",
+        model_type="cnn",
+        dataset_hash=dataset_hash,
+        metrics={"accuracy": acc},
+        model_params=metadata,
+        model_artifact=model_path.name,
+        config_hash=None,
+        seed=seed,
+        extra={"dataset_name": dataset_name, "model_arch": model_arch},
+    )
 
     return TorchRunResult(run_id=run_id, run_path=run_path, metrics={"accuracy": acc})
 
@@ -954,10 +969,23 @@ def train_rnn_text(
         },
     )
     tracker.save_json(run_path / "model_info.json", {"model_type": "rnn", "dataset": dataset_name, "model_arch": model_arch})
-    _save_torch_model(model, run_path)
+    model_path = _save_torch_model(model, run_path)
     torch.save(vocab, run_path / "vocab.pt")
     if bpe_merges is not None:
         tracker.save_json(run_path / "bpe_merges.json", [list(p) for p in bpe_merges])
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="text",
+        task_type="classification",
+        model_type="rnn",
+        dataset_hash=data_hash,
+        metrics={"test_accuracy": acc},
+        model_params=metadata,
+        model_artifact=model_path.name,
+        config_hash=None,
+        seed=seed,
+        extra={"dataset_name": dataset_name, "model_arch": model_arch},
+    )
 
     return TorchRunResult(run_id=run_id, run_path=run_path, metrics={"test_accuracy": acc})
 

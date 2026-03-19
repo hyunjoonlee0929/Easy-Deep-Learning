@@ -30,6 +30,7 @@ from Easy_Deep_Learning.core.tuning import run_auto_tuning
 from Easy_Deep_Learning.core.data_quality import compute_data_quality
 from Easy_Deep_Learning.core.drift import compute_drift
 from Easy_Deep_Learning.core.cv import run_cross_validation
+from Easy_Deep_Learning.core.mlops import finalize_run_tracking
 from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -311,6 +312,22 @@ def train_and_save(
     generate_ai_report(run_path)
     generate_model_recommendations(run_path)
     generate_html_report(run_path)
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="tabular",
+        task_type=task_type,
+        model_type=resolved_model_type,
+        dataset_hash=data_hash,
+        metrics=model_result.metrics,
+        model_params=params,
+        model_artifact=model_path.name,
+        config_hash=cfg_hash,
+        seed=seed,
+        extra={
+            "target_column": target_column,
+            "feature_count": len(processed.feature_names),
+        },
+    )
     return RunResult(run_id=run_id, run_path=run_path, metrics=model_result.metrics)
 
 
@@ -372,6 +389,24 @@ def save_cv_report(payload: dict[str, Any]) -> Path:
         "</body></html>"
     )
     (run_path / "cv_report.html").write_text(html, encoding="utf-8")
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="cv",
+        task_type=str(payload.get("task_type", "classification")),
+        model_type=str(payload.get("model_type", "cv")),
+        dataset_hash=tracker.hash_payload(
+            {
+                "folds": payload.get("folds"),
+                "mean_metrics": payload.get("mean_metrics", {}),
+            }
+        ),
+        metrics=payload.get("mean_metrics", {}),
+        model_params={"folds": payload.get("folds")},
+        model_artifact=None,
+        config_hash=None,
+        seed=None,
+        extra={"cv_report": True},
+    )
     return run_path
 
 
@@ -485,6 +520,20 @@ def run_leaderboard(
                 "task_type": task_type,
             },
         },
+    )
+    mean_metrics = leaderboard[0]["metrics"] if leaderboard else {}
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="automl",
+        task_type=task_type,
+        model_type="automl",
+        dataset_hash=tracker.file_hash(data_path),
+        metrics=mean_metrics,
+        model_params={"max_models": len(candidates)},
+        model_artifact=None,
+        config_hash=cfg_hash,
+        seed=seed,
+        extra={"best_run_id": leaderboard[0]["run_id"] if leaderboard else None},
     )
 
     return {

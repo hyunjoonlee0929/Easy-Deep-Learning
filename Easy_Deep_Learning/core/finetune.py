@@ -11,6 +11,7 @@ import json
 import numpy as np
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
+from Easy_Deep_Learning.core.mlops import finalize_run_tracking
 from Easy_Deep_Learning.core.torch_workflows import _build_image_model, _save_torch_model, _require_torch
 from Easy_Deep_Learning.core.text_transformers import train_text_transformer, TextRunResult
 
@@ -160,7 +161,20 @@ def finetune_image_folder(
     )
     tracker.save_json(run_path / "model_info.json", {"model_type": "finetune_image", "model_arch": model_arch})
     tracker.save_json(run_path / "run_metadata.json", {"model_type": "finetune_image", **metadata})
-    _save_torch_model(model, run_path)
+    model_path = _save_torch_model(model, run_path)
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="finetune",
+        task_type="classification",
+        model_type="finetune_image",
+        dataset_hash=data_hash,
+        metrics={"val_accuracy": acc},
+        model_params=metadata,
+        model_artifact=model_path.name,
+        config_hash=None,
+        seed=seed,
+        extra={"data_dir": str(data_dir), "model_arch": model_arch},
+    )
 
     return ImageFineTuneResult(run_id=run_id, run_path=run_path, metrics={"val_accuracy": acc})
 
@@ -189,4 +203,3 @@ def finetune_text_transformer(
         run_type="text_finetune",
         reuse_if_exists=reuse_if_exists,
     )
-

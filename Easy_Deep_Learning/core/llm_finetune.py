@@ -10,6 +10,7 @@ import json
 import pandas as pd
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
+from Easy_Deep_Learning.core.mlops import finalize_run_tracking
 
 
 @dataclass
@@ -142,6 +143,19 @@ def finetune_llm_lora(
 
     model.save_pretrained(run_path / "adapter")
     tokenizer.save_pretrained(run_path / "tokenizer")
+    finalize_run_tracking(
+        run_path=run_path,
+        run_type="llm_finetune",
+        task_type="generation",
+        model_type="llm_finetune",
+        dataset_hash=data_hash,
+        metrics={k: float(v) for k, v in eval_metrics.items()},
+        model_params=metadata,
+        model_artifact="adapter",
+        config_hash=None,
+        seed=seed,
+        extra={"model_name": model_name},
+    )
 
     return LLMFineTuneResult(
         run_id=run_id,

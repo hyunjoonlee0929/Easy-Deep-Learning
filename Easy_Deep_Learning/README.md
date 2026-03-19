@@ -136,6 +136,42 @@ curl -X POST http://localhost:8000/predict \
 - `error_analysis.json`
 - `drift_report.json`
 
+## MLOps Experiment Management
+
+- Standard Run Metadata Schema
+  - `run_metadata.standard.json` 자동 생성
+  - 핵심 필드: `run_type`, `dataset_hash`, `env`, `model_signature`
+- Model Registry Layer
+  - `runs/model_registry.json`에 run 등록
+  - 자동 태그: `latest:*`, `best:*`
+  - 승격 태그: `production:*` (CLI로 승격)
+- Auto Cards
+  - Run 종료 시 `run_card.json` + `run_card.md` 자동 생성
+  - 데이터/모델/성능/리스크를 한 번에 요약
+
+### Registry CLI
+
+```bash
+python Easy_Deep_Learning/main.py registry-list
+python Easy_Deep_Learning/main.py registry-resolve --tag latest:tabular:classification:rf
+python Easy_Deep_Learning/main.py registry-promote --run-id <run_id>
+```
+
+### Example Run Folder
+
+```text
+runs/{run_id}/
+├── config_snapshot.yaml
+├── metrics.json
+├── model_info.json
+├── run_metadata.json
+├── run_metadata.standard.json
+├── registry_tags.json
+├── run_card.json
+├── run_card.md
+└── ... (explainability/report artifacts)
+```
+
 ## Positioning (Portfolio)
 
 이 프로젝트는 “모델 하나를 학습하는 코드”가 아니라,  
