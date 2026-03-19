@@ -40,10 +40,16 @@ def _image_embed(image) -> np.ndarray:
 
 
 def _text_embed(text: str) -> np.ndarray:
-    # lightweight: TF-IDF average of character n-grams
+    # Fixed-size embedding avoids varying dimensions across items.
     import sklearn.feature_extraction.text as sk_text
-    vectorizer = sk_text.TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5))
-    vec = vectorizer.fit_transform([text]).toarray().astype(np.float32)[0]
+    vectorizer = sk_text.HashingVectorizer(
+        analyzer="char_wb",
+        ngram_range=(3, 5),
+        n_features=512,
+        alternate_sign=False,
+        norm=None,
+    )
+    vec = vectorizer.transform([text]).toarray().astype(np.float32)[0]
     return vec
 
 

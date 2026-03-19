@@ -66,10 +66,65 @@ quick_tab_map = {
     "Quick GitHub Summary": "GitHub Summary",
     "Quick Chatbot": "Chatbot",
 }
-if quick_action in quick_tab_map:
-    st.session_state["active_tab"] = quick_tab_map[quick_action]
+if st.session_state.get("quick_action_applied") != quick_action:
+    st.session_state["quick_action_applied"] = quick_action
+    if quick_action in quick_tab_map:
+        st.session_state["active_tab"] = quick_tab_map[quick_action]
+    if quick_action == "Quick Tabular Classification":
+        st.session_state["train_source_default"] = "Preset Dataset"
+        st.session_state["train_preset_default"] = "Breast Cancer (classification)"
+        st.session_state["quick_task_type"] = "classification"
+        st.session_state["quick_model_type"] = "rf"
+    if quick_action == "Quick Tabular Regression":
+        st.session_state["train_source_default"] = "Preset Dataset"
+        st.session_state["train_preset_default"] = "Diabetes (regression)"
+        st.session_state["quick_task_type"] = "regression"
+        st.session_state["quick_model_type"] = "gbm"
+    if quick_action == "Quick Image Models":
+        st.session_state["quick_image_dataset"] = "MNIST"
+        st.session_state["quick_image_arch"] = "cnn"
+    if quick_action == "Quick Text Models":
+        st.session_state["quick_text_dataset"] = "SST2_SAMPLE"
+        st.session_state["quick_text_arch"] = "gru"
+    if quick_action == "Quick Fine-tune":
+        st.session_state["ft_img_arch"] = "resnet18"
+        st.session_state["ft_text_model"] = "distilbert-base-uncased"
+        st.session_state["ft_llm_model"] = "distilgpt2"
+    if quick_action == "Quick Audio Demo":
+        st.session_state["audio_builtin"] = "Sine 440Hz"
+        st.session_state["audio_model"] = "superb/wav2vec2-base-superb-ks"
+    if quick_action == "Quick Video":
+        st.session_state["video_builtin"] = True
+        st.session_state["det_video_builtin"] = True
+    if quick_action == "Quick Agent":
+        st.session_state["agent_source_default"] = "Preset Dataset"
+        st.session_state["agent_preset_default"] = "Breast Cancer (classification)"
+        st.session_state["agent_task"] = "classification"
+    if quick_action == "Quick RAG":
+        st.session_state["rag_docs"] = "Easy Deep Learning trains ML models.\nRAG retrieves context chunks."
+        st.session_state["rag_query"] = "What does this project do?"
+        st.session_state["rag_topk"] = 3
+    if quick_action == "Quick Multimodal":
+        st.session_state["mm_texts"] = "cat image\ncar image"
+        st.session_state["mm_query_text"] = "cat"
+    if quick_action == "Quick GitHub Summary":
+        st.session_state["chatbot_url"] = "https://github.com/hyunjoonlee0929/Easy-Deep-Learning"
+    if quick_action == "Quick Chatbot":
+        st.session_state["chat_use_llm"] = False
 if st.sidebar.button("Clear Quick Preset"):
-    for key in ["train_source_default", "train_preset_default"]:
+    for key in [
+        "train_source_default",
+        "train_preset_default",
+        "agent_source_default",
+        "agent_preset_default",
+        "quick_task_type",
+        "quick_model_type",
+        "quick_image_dataset",
+        "quick_image_arch",
+        "quick_text_dataset",
+        "quick_text_arch",
+        "quick_action_applied",
+    ]:
         if key in st.session_state:
             del st.session_state[key]
 
@@ -1693,7 +1748,7 @@ if active_tab == "Audio Demo":
     ref_text = st.text_input("Reference text (optional)", value="", key="asr_ref")
     if st.button("Transcribe Audio", type="secondary"):
         try:
-            audio_bytes = uploaded.read() if uploaded else (recorded.getvalue() if recorded else (webrtc_wav if webrtc_wav is not None else None))
+            audio_bytes = uploaded.getvalue() if uploaded else (recorded.getvalue() if recorded else (webrtc_wav if webrtc_wav is not None else None))
             if audio_bytes is None:
                 st.error("WAV 파일을 업로드하거나 녹음하세요.")
             else:
@@ -1742,14 +1797,14 @@ if active_tab == "Audio Demo":
         from Easy_Deep_Learning.core.audio_models import classify_audio_bytes
         audio_bytes = None
         if uploaded is not None:
-            audio_bytes = uploaded.read()
+            audio_bytes = uploaded.getvalue()
         elif recorded is not None:
             audio_bytes = recorded.getvalue()
         elif webrtc_wav is not None:
             audio_bytes = webrtc_wav
         else:
             if built_in.startswith("Sine"):
-                audio_bytes = audio
+                audio_bytes = write_wav_bytes(signal, sr=sr)
             else:
                 try:
                     audio_bytes = (samples_dir / built_in).read_bytes()
