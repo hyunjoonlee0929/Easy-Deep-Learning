@@ -12,6 +12,7 @@ import numpy as np
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
 from Easy_Deep_Learning.core.mlops import finalize_run_tracking
+from Easy_Deep_Learning.core.security import ensure_model_download_allowed
 from Easy_Deep_Learning.core.torch_workflows import _build_image_model, _save_torch_model, _require_torch
 from Easy_Deep_Learning.core.text_transformers import train_text_transformer, TextRunResult
 
@@ -102,6 +103,8 @@ def finetune_image_folder(
             return ImageFineTuneResult(run_id=existing, run_path=run_path, metrics=metrics)
 
     model_arch = model_arch.lower()
+    if use_pretrained:
+        ensure_model_download_allowed(model_arch)
     resize = 224 if model_arch in ["resnet18", "resnet50", "resnet101", "resnet152", "convnext_tiny", "convnext_base", "vit_b_16", "vit_l_16"] else 32
     transform = transforms.Compose([transforms.Resize(resize), transforms.ToTensor()])
 

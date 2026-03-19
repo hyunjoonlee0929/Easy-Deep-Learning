@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from Easy_Deep_Learning.core.mlops import finalize_run_tracking
+from Easy_Deep_Learning.core.security import ensure_model_download_allowed
 
 
 @dataclass
@@ -48,6 +49,7 @@ def train_text_transformer(
 
     from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
 
+    ensure_model_download_allowed(model_name)
     tracker = ExperimentTracker(base_dir=Path("runs"))
     data_hash = tracker.file_hash(data_path)
     metadata = {

@@ -10,6 +10,8 @@ from typing import Any, Iterable
 
 import requests
 
+from Easy_Deep_Learning.core.security import ensure_external_request_allowed
+
 
 @dataclass
 class ChatbotResult:
@@ -133,6 +135,7 @@ def _openai_summary(readme_text: str, source: str) -> ChatbotResult | None:
     except Exception:
         return None
 
+    ensure_external_request_allowed("https://api.openai.com/v1")
     client = OpenAI()
     prompt = (
         "Summarize the README. Return STRICT JSON with keys: "
@@ -192,6 +195,7 @@ def _parse_github_url(url: str) -> tuple[str, str, str | None]:
 
 
 def fetch_readme_from_github(url: str, timeout: int = 12) -> tuple[str, str]:
+    ensure_external_request_allowed(url)
     owner, repo, explicit = _parse_github_url(url)
     session = requests.Session()
     session.headers.update({"User-Agent": "EasyDeepLearning-Chatbot"})
@@ -199,6 +203,7 @@ def fetch_readme_from_github(url: str, timeout: int = 12) -> tuple[str, str]:
     if explicit:
         branch, path = explicit.split("/", 1)
         raw_url = _github_raw_url(owner, repo, branch, path)
+        ensure_external_request_allowed(raw_url)
         resp = session.get(raw_url, timeout=timeout)
         resp.raise_for_status()
         return resp.text, raw_url
@@ -213,6 +218,7 @@ def fetch_readme_from_github(url: str, timeout: int = 12) -> tuple[str, str]:
     ]
     for branch, path in candidates:
         raw_url = _github_raw_url(owner, repo, branch, path)
+        ensure_external_request_allowed(raw_url)
         resp = session.get(raw_url, timeout=timeout)
         if resp.status_code == 200 and resp.text.strip():
             return resp.text, raw_url
@@ -233,8 +239,10 @@ def summarize_github_readme(url: str) -> ChatbotResult:
 
 
 def fetch_repo_contents(url: str, timeout: int = 12) -> list[dict[str, Any]]:
+    ensure_external_request_allowed(url)
     owner, repo, _ = _parse_github_url(url)
     api = f"https://api.github.com/repos/{owner}/{repo}/contents"
+    ensure_external_request_allowed(api)
     session = requests.Session()
     session.headers.update({"User-Agent": "EasyDeepLearning-Chatbot"})
     resp = session.get(api, timeout=timeout)
@@ -329,6 +337,7 @@ def chat_response(message: str) -> str:
     except Exception:
         return _fallback_chat(message)
 
+    ensure_external_request_allowed("https://api.openai.com/v1")
     client = OpenAI()
     response = client.responses.create(
         model="gpt-4o-mini",

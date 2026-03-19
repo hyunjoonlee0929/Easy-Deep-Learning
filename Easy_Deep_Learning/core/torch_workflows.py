@@ -17,6 +17,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
 from Easy_Deep_Learning.core.mlops import finalize_run_tracking
+from Easy_Deep_Learning.core.security import ensure_dataset_download_allowed, ensure_model_download_allowed
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -68,6 +69,8 @@ def _build_image_model(
     import torchvision
 
     model_arch = model_arch.lower()
+    if use_pretrained:
+        ensure_model_download_allowed(model_arch)
 
     if model_arch == "resnet18":
         weights = torchvision.models.ResNet18_Weights.DEFAULT if use_pretrained else None
@@ -310,6 +313,7 @@ def train_cnn_image(
         transforms.Resize(resize),
         transforms.ToTensor(),
     ])
+    ensure_dataset_download_allowed(dataset_name)
 
     if dataset_name == "SVHN":
         train_ds = ds_cls(root=str(data_dir), split="train", download=True, transform=transform)
@@ -433,6 +437,7 @@ def test_cnn_image(run_id: str) -> dict[str, Any]:
         raise ValueError("Unsupported dataset")
 
     transform = transforms.Compose([transforms.Resize(resize), transforms.ToTensor()])
+    ensure_dataset_download_allowed(dataset_name)
     if dataset_name == "SVHN":
         test_ds = ds_cls(root=str(data_dir), split="test", download=True, transform=transform)
     elif dataset_name == "EMNIST":

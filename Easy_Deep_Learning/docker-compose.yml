@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: easy-dl-api
+    ports:
+      - "8000:8000"
+    environment:
+      - EASY_DL_LOG_JSON=1
+      - EASY_DL_ALLOW_EXTERNAL_REQUESTS=1
+      - EASY_DL_ALLOW_DATASET_DOWNLOAD=1
+      - EASY_DL_ALLOW_LARGE_MODEL_DOWNLOAD=0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./runs:/workspace/Easy_Deep_Learning/runs
+      - ./logs:/workspace/Easy_Deep_Learning/logs
+      - ./data:/workspace/Easy_Deep_Learning/data
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: easy-dl-streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - EASY_DL_LOG_JSON=1
+      - EASY_DL_ALLOW_EXTERNAL_REQUESTS=1
+      - EASY_DL_ALLOW_DATASET_DOWNLOAD=1
+      - EASY_DL_ALLOW_LARGE_MODEL_DOWNLOAD=0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      - api
+    volumes:
+      - ./runs:/workspace/Easy_Deep_Learning/runs
+      - ./logs:/workspace/Easy_Deep_Learning/logs
+      - ./data:/workspace/Easy_Deep_Learning/data

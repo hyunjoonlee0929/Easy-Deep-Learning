@@ -85,6 +85,19 @@ pip install -r Easy_Deep_Learning/requirements.txt
 streamlit run Easy_Deep_Learning/dashboard/app.py
 ```
 
+## Docker One-Command
+
+```bash
+cd Easy_Deep_Learning
+docker compose up --build
+```
+
+- Streamlit: `http://localhost:8501`
+- API: `http://localhost:8000`
+- 분리 이미지:
+  - `Dockerfile.streamlit`
+  - `Dockerfile.api`
+
 ## Stability and Compatibility
 
 - Regression tests for major platform flows are included under `Easy_Deep_Learning/tests`.
@@ -120,6 +133,29 @@ curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"run_id":"<run_id>","records":[{"col1":1.2,"col2":"A"}]}'
 ```
+
+## Observability
+
+- Structured logging
+  - JSON logs 기본 활성화 (`EASY_DL_LOG_JSON=1`)
+  - `logs/app.log`에 저장
+- Error trace capture
+  - API/Dashboard 예외를 `runs/error_traces/*.json`으로 저장
+- Tab usage analytics
+  - 탭 접근 통계 `runs/usage_stats.json` 자동 저장
+
+## Security & Cost Guard
+
+- OpenAI key handling
+  - 대시보드 키 입력은 세션 저장 기본
+  - 필요 시에만 `OPENAI_API_KEY` 환경변수에 주입
+- External request policy
+  - `EASY_DL_ALLOW_EXTERNAL_REQUESTS` (default: `1`)
+  - `EASY_DL_ALLOWED_DOMAINS` allowlist 적용
+- Dataset/model download policy
+  - `EASY_DL_ALLOW_DATASET_DOWNLOAD` (default: `1`)
+  - `EASY_DL_ALLOW_LARGE_MODEL_DOWNLOAD` (default: `0`)
+  - 대형 모델명 패턴은 기본 차단
 
 ## Run Artifacts
 

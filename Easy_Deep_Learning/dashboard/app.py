@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 import zipfile
 from typing import Any
@@ -18,8 +19,12 @@ if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from Easy_Deep_Learning.core.logging_utils import configure_logging
+from Easy_Deep_Learning.core.logging_utils import log_event
 from Easy_Deep_Learning.core.automl import recommend_model
 from Easy_Deep_Learning.core.workflows import run_leaderboard, test_from_run, train_and_save, auto_tune_and_train
+from Easy_Deep_Learning.core.observability import save_error_trace, track_tab_usage
+from Easy_Deep_Learning.core.security import get_security_policy, mask_api_key, validate_openai_key_format
+from Easy_Deep_Learning.core.security import ensure_dataset_download_allowed
 from Easy_Deep_Learning.core.streamlit_compat import render_navigation, supports_audio_input
 
 configure_logging("INFO")
@@ -58,12 +63,23 @@ advanced_ui = st.sidebar.checkbox("Show advanced panels", value=False, key="ui_a
 
 st.sidebar.header("OpenAI API Key")
 api_key_input = st.sidebar.text_input("API Key", type="password", value=st.session_state.get("openai_api_key", ""))
+apply_env_key = st.sidebar.checkbox("Apply key to process env", value=False, key="openai_key_env_apply")
 if api_key_input:
-    st.session_state["openai_api_key"] = api_key_input
-    os.environ["OPENAI_API_KEY"] = api_key_input
-    st.sidebar.success("API key set for this session.")
+    if validate_openai_key_format(api_key_input):
+        st.session_state["openai_api_key"] = api_key_input
+        if apply_env_key:
+            os.environ["OPENAI_API_KEY"] = api_key_input
+        st.sidebar.success(f"API key set for this session ({mask_api_key(api_key_input)}).")
+    else:
+        st.sidebar.error("API key format looks invalid.")
 else:
     st.sidebar.info("키를 입력하면 챗봇/요약 기능에서 OpenAI 사용 가능")
+
+policy = get_security_policy()
+with st.sidebar.expander("Security Policy", expanded=False):
+    st.write(f"External requests: {'allowed' if policy.allow_external_requests else 'blocked'}")
+    st.write(f"Dataset downloads: {'allowed' if policy.allow_dataset_download else 'blocked'}")
+    st.write(f"Large model downloads: {'allowed' if policy.allow_large_model_download else 'blocked'}")
 
 st.sidebar.header("System Status")
 def _dep_status(module_name: str) -> tuple[bool, str]:
@@ -99,6 +115,17 @@ if selected_sidebar_run:
     if report_path.exists():
         with report_path.open("rb") as f:
             st.sidebar.download_button("Download report.html", f, file_name="report.html", mime="text/html")
+
+usage_stats_path = Path("runs/usage_stats.json")
+with st.sidebar.expander("Usage Stats", expanded=False):
+    if usage_stats_path.exists():
+        try:
+            usage_payload = json.loads(usage_stats_path.read_text(encoding="utf-8"))
+            st.json(usage_payload.get("tabs", {}))
+        except Exception:
+            st.info("usage_stats.json parse failed")
+    else:
+        st.info("No usage stats yet.")
 
 
 def show_tab_help(title: str, items: list[str]) -> None:
@@ -156,7 +183,10 @@ def run_with_feedback(label: str, fn):
         return out
     except Exception as exc:
         progress.empty()
+        trace_path = save_error_trace("dashboard", exc, {"action": label})
+        log_event(logger, "dashboard_error", action=label, trace_path=str(trace_path), error_type=type(exc).__name__)
         st.error(f"{label} failed: {exc}")
+        st.caption(f"trace: {trace_path.name}")
         st.info(error_hint_message(exc))
         return None
 
@@ -642,6 +672,12 @@ default_tab = st.session_state.get("active_tab", "Tabular")
 if default_tab not in tab_labels:
     default_tab = "Tabular"
 active_tab = render_navigation(st, tab_labels, default_tab, key="active_tab")
+session_id = st.session_state.setdefault("session_id", str(uuid.uuid4()))
+last_tab = st.session_state.get("_last_tracked_tab")
+if active_tab != last_tab:
+    track_tab_usage(active_tab, session_id)
+    st.session_state["_last_tracked_tab"] = active_tab
+    log_event(logger, "tab_open", tab=active_tab, session_id=session_id)
 
 if active_tab == "Tabular":
     tabular_advanced = tab_mode("tabular")
@@ -1118,23 +1154,29 @@ if active_tab == "Image":
                     else:
                         ds_cls = torchvision.datasets.CIFAR10
 
-                    if dataset == "SVHN":
-                        preview_ds = ds_cls(root=str(data_dir), split="train", download=True, transform=transforms.ToTensor())
-                    elif dataset == "EMNIST":
-                        preview_ds = ds_cls(root=str(data_dir), split="balanced", train=True, download=True, transform=transforms.ToTensor())
-                    else:
-                        preview_ds = ds_cls(root=str(data_dir), train=True, download=True, transform=transforms.ToTensor())
-                    images = []
-                    labels = []
-                    for i in range(min(12, len(preview_ds))):
-                        img, lbl = preview_ds[i]
-                        img_np = img.detach().cpu().numpy()
-                        if img_np.shape[0] in (1, 3):
-                            img_np = img_np.transpose(1, 2, 0)
-                        images.append(img_np)
-                        labels.append(str(lbl))
+                    try:
+                        ensure_dataset_download_allowed(dataset)
+                        if dataset == "SVHN":
+                            preview_ds = ds_cls(root=str(data_dir), split="train", download=True, transform=transforms.ToTensor())
+                        elif dataset == "EMNIST":
+                            preview_ds = ds_cls(root=str(data_dir), split="balanced", train=True, download=True, transform=transforms.ToTensor())
+                        else:
+                            preview_ds = ds_cls(root=str(data_dir), train=True, download=True, transform=transforms.ToTensor())
+                    except Exception as exc:
+                        st.error(f"Dataset preview blocked/failed: {exc}")
+                        preview_ds = None
+                    if preview_ds is not None:
+                        images = []
+                        labels = []
+                        for i in range(min(12, len(preview_ds))):
+                            img, lbl = preview_ds[i]
+                            img_np = img.detach().cpu().numpy()
+                            if img_np.shape[0] in (1, 3):
+                                img_np = img_np.transpose(1, 2, 0)
+                            images.append(img_np)
+                            labels.append(str(lbl))
 
-                    st.image(images, caption=labels, width=120)
+                        st.image(images, caption=labels, width=120)
 
                 st.subheader("Test Saved CNN")
                 runs_dir = Path("runs")
@@ -1210,6 +1252,7 @@ if active_tab == "Image":
         elif det_source == "VOC (download)":
             try:
                 import torchvision
+                ensure_dataset_download_allowed("VOC")
                 ds = torchvision.datasets.VOCDetection(root=det_data_dir, year="2007", image_set="val", download=True)
                 image, _ = ds[0]
             except Exception as exc:
@@ -1218,6 +1261,7 @@ if active_tab == "Image":
         else:
             try:
                 import torchvision
+                ensure_dataset_download_allowed("COCO")
                 try:
                     import pycocotools  # noqa: F401
                 except Exception as exc:

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from Easy_Deep_Learning.core.security import ensure_external_request_allowed, validate_openai_key_format
 
 def _read_json(path: Path) -> dict[str, Any] | list[Any] | None:
     if not path.exists():
@@ -59,10 +60,11 @@ def generate_ai_report(run_path: Path) -> Path:
 
     api_key = os.getenv("OPENAI_API_KEY")
     report = None
-    if api_key:
+    if api_key and validate_openai_key_format(api_key):
         try:
             from openai import OpenAI
 
+            ensure_external_request_allowed("https://api.openai.com/v1")
             client = OpenAI()
             prompt = (
                 "Return STRICT JSON with keys: summary, strengths, risks, next_steps. "

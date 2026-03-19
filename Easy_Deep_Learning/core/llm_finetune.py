@@ -12,6 +12,7 @@ import pandas as pd
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
 from Easy_Deep_Learning.core.mlops import finalize_run_tracking
+from Easy_Deep_Learning.core.security import ensure_model_download_allowed
 
 
 @dataclass
@@ -156,6 +157,7 @@ def finetune_llm_lora(
     except Exception as exc:
         raise RuntimeError("transformers, datasets, torch, and peft are required for LLM fine-tuning.") from exc
 
+    ensure_model_download_allowed(model_name)
     tracker = ExperimentTracker(base_dir=Path("runs"))
     data_hash = tracker.file_hash(data_path)
     dataset_validation = validate_llm_dataset(
@@ -278,6 +280,7 @@ def load_lora_model(run_path: Path):
 
     info = json.loads((Path(run_path) / "model_info.json").read_text(encoding="utf-8"))
     base_model = info.get("model_name", "distilgpt2")
+    ensure_model_download_allowed(base_model)
     tokenizer = AutoTokenizer.from_pretrained(Path(run_path) / "tokenizer")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token

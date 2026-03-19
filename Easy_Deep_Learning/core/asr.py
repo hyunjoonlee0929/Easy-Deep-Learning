@@ -7,6 +7,8 @@ import os
 import re
 from typing import Any
 
+from Easy_Deep_Learning.core.security import ensure_external_request_allowed, validate_openai_key_format
+
 
 def _normalize_text(text: str) -> str:
     text = text.lower().strip()
@@ -68,11 +70,14 @@ def transcribe_openai(
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set.")
+    if not validate_openai_key_format(api_key):
+        raise RuntimeError("OPENAI_API_KEY format looks invalid.")
     try:
         from openai import OpenAI
     except Exception as exc:
         raise RuntimeError("openai package not installed.") from exc
 
+    ensure_external_request_allowed("https://api.openai.com/v1")
     client = OpenAI()
     audio_file = io.BytesIO(audio_bytes)
     audio_file.name = "audio.wav"
