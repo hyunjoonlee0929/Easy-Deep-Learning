@@ -85,6 +85,28 @@ pip install -r Easy_Deep_Learning/requirements.txt
 streamlit run Easy_Deep_Learning/dashboard/app.py
 ```
 
+## Stability and Compatibility
+
+- Regression tests for major platform flows are included under `Easy_Deep_Learning/tests`.
+- Dependency compatibility is pinned via:
+  - `Easy_Deep_Learning/constraints/py312.txt`
+  - `Easy_Deep_Learning/docs/dependency_matrix.md`
+- Streamlit version differences are abstracted by:
+  - `Easy_Deep_Learning/core/streamlit_compat.py`
+
+Recommended install:
+
+```bash
+pip install -r Easy_Deep_Learning/requirements.txt -c Easy_Deep_Learning/constraints/py312.txt
+```
+
+Run tests:
+
+```bash
+cd Easy_Deep_Learning
+pytest
+```
+
 ## API Server
 
 ```bash

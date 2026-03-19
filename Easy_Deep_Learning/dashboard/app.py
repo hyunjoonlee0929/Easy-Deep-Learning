@@ -20,6 +20,7 @@ if __package__ is None or __package__ == "":
 from Easy_Deep_Learning.core.logging_utils import configure_logging
 from Easy_Deep_Learning.core.automl import recommend_model
 from Easy_Deep_Learning.core.workflows import run_leaderboard, test_from_run, train_and_save, auto_tune_and_train
+from Easy_Deep_Learning.core.streamlit_compat import render_navigation, supports_audio_input
 
 configure_logging("INFO")
 logger = logging.getLogger(__name__)
@@ -686,8 +687,7 @@ tab_labels = [
 default_tab = st.session_state.get("active_tab", "Tabular")
 if default_tab not in tab_labels:
     default_tab = "Tabular"
-tab_index = tab_labels.index(default_tab)
-active_tab = st.radio("Navigation", tab_labels, index=tab_index, horizontal=True, key="active_tab")
+active_tab = render_navigation(st, tab_labels, default_tab, key="active_tab")
 
 if active_tab == "Tabular":
     train_view, test_view, compare_view = st.tabs(["Train", "Test", "Compare"])
@@ -1700,7 +1700,7 @@ if active_tab == "Audio Demo":
     recorded = None
     webrtc_signal = None
     webrtc_wav = st.session_state.get("webrtc_wav")
-    if hasattr(st, "audio_input"):
+    if supports_audio_input(st):
         recorded = st.audio_input("Record audio (optional)", key="audio_record")
     else:
         st.info("이 Streamlit 버전은 audio_input을 지원하지 않습니다. 웹 녹음 컴포넌트를 사용합니다.")
