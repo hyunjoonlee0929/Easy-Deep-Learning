@@ -1,81 +1,97 @@
 # Easy Deep Learning
 
-Easy Deep Learning은 사용자가 CSV 데이터로 분류/회귀 문제를 빠르게 학습하고,
-저장된 모델로 다른 데이터셋을 재평가할 수 있도록 만든 경량 ML 애플리케이션입니다.
+Easy Deep Learning은 단일 모델 데모가 아니라, 데이터 입력부터 학습/평가/해석/리포팅/서빙까지 연결하는 **실행형 AI 플랫폼**입니다.  
+목표는 사용자가 복잡한 ML/딥러닝 실험을 빠르게 반복하고, 결과를 해석 가능하게 관리하며, 실제 서비스 형태(API/대시보드)로 전환할 수 있게 하는 것입니다.
 
-## 핵심 기능
+## Platform Vision
 
-- CSV 기반 학습 파이프라인
-- 분류 / 회귀 지원
-- 모델 선택:
-  - 딥러닝: `dnn` (NumPy 기반)
-  - 전통 ML: `rf`, `svm`, `knn`, `lr`, `gbm`, `xgboost`
-- 자동 전처리 (결측치 처리, 스케일링, 인코딩)
-- 학습 결과/모델/전처리기 자동 저장 (`runs/{run_id}`)
-- 저장된 모델로 새 테스트 데이터 평가
-- Auto 모델 추천 (`--model-type auto`)
-- AutoML 리더보드 생성 (`automl` 명령)
-- 실행 리포트 HTML 자동 생성
-- Streamlit 대시보드에서 메트릭 시각화
-- Streamlit에서 리포트/Confusion Matrix/ROC 아티팩트 확인
-- AutoML 리더보드 CSV 다운로드
-- 이미지(CNN/ResNet) / 텍스트(GRU/LSTM/TextCNN/Transformer-lite) 모델 데모
-- 오디오/비디오 데모 (WAV/프레임 시퀀스)
-- 오디오 샘플 데이터 (sine/chirp WAV)
-- 이미지/비디오 객체 탐지 데모 (YOLOv8 / Faster R-CNN)
-- Tool-Using Agent 데모 (데이터 요약 + 모델 추천)
-- RAG + Auto Evaluation 데모
-- 멀티모달 검색 데모 (이미지/텍스트)
-- GitHub README 요약 챗봇 (룰 기반 + OpenAI 옵션)
-- GitHub 저장소 구조 분석 + 실행 커맨드 제안
-- AI 자동 리포트 (OpenAI 옵션 + 룰 기반)
-- SHAP + PDP + ICE 해석 리포트
-- 에러 분석 (오분류/잔차 상위 샘플, Residual plot)
-- 실패 샘플 로컬 중요도(SHAP 기반) 요약
-- 모델 개선 추천 리포트
-- SHAP Interaction + Interaction PDP
-- Auto Tuning (간단한 하이퍼파라미터 탐색)
+- End-to-End AI Workflow
+  - 데이터 로드 -> 전처리 -> 학습 -> 평가 -> 해석 -> 리포트 -> 재테스트 -> API 서빙
+- Multi-Modal Workspace
+  - Tabular / Image / Text / Audio / Video / RAG / Multimodal / Agent / Chatbot 통합
+- Reproducible Experiment System
+  - `runs/{run_id}` 기반 아티팩트 추적, 모델 재사용, 비교 리포트
+- Human-Friendly UX
+  - Streamlit 기반 인터랙티브 UI + Quick Start + 고급 옵션 토글
 
-## 프로젝트 구조
+## What Makes It a Platform
+
+1. **통합 인터페이스**
+- 단일 UI에서 서로 다른 AI 작업 유형을 수행
+- 학습과 추론, 리포팅, 챗봇, 요약까지 한 흐름으로 연결
+
+2. **모듈형 엔진**
+- 전처리/모델/평가/해석/리포팅/서빙을 독립 모듈로 분리
+- CLI, Dashboard, API가 동일 코어를 공유
+
+3. **실험 추적 중심**
+- 실행 결과를 파일 단위로 구조화 저장
+- 재현/비교/재테스트가 가능한 실험 관리 구조
+
+4. **확장 가능 구조**
+- 전통 ML + 딥러닝 + LoRA 기반 LLM fine-tuning
+- 객체탐지/ASR/RAG/멀티모달 검색 등 확장 기능 포함
+
+## Core Capabilities
+
+- Tabular ML/DL
+  - 분류/회귀, 자동 전처리, 모델 학습/평가, 저장 모델 재테스트
+- Model Families
+  - `dnn`, `tab_transformer`, `rf`, `svm`, `knn`, `lr`, `gbm`, `xgboost`
+- Image/Text
+  - CNN/ResNet/ConvNeXt/ViT, RNN/Transformer 기반 학습 및 테스트
+- Audio/Video
+  - 오디오 특징/ASR/분류 데모, 비디오 프레임 기반 디텍션
+- Detection
+  - YOLO 계열 + Faster R-CNN 기반 이미지/비디오 객체 탐지
+- Interpretability
+  - SHAP, PDP/ICE, 에러 분석, 상호작용 분석
+- LLM Features
+  - LoRA fine-tuning, 생성 테스트, 멀티턴 챗 연결
+- Agent/RAG/Multimodal
+  - Tool-Using Agent, RAG + 자동 평가, 이미지/텍스트 검색
+- Serving
+  - FastAPI `/predict`, `/llm/generate`, `/llm/chat`
+
+## System Architecture
+
+```text
+Data Ingestion
+  -> Validation / Preprocessing
+  -> Training / Tuning / CV
+  -> Evaluation / Explainability
+  -> AI Report Generation
+  -> Run Artifacts Tracking
+  -> Inference API / Dashboard
+```
+
+## Project Structure
 
 ```text
 Easy_Deep_Learning/
-├── core/
-│   ├── data_validator.py
-│   ├── preprocessing.py
-│   ├── model_engine.py
-│   ├── model_registry.py
-│   ├── automl.py
-│   ├── trainer.py
-│   ├── experiment_tracker.py
-│   ├── reporting.py
-│   ├── workflows.py
-│   └── torch_workflows.py
-├── dashboard/
-│   └── app.py
-├── config/
-│   └── model_config.yaml
-├── data/
-│   ├── example_dataset.csv
-│   ├── text_sample_sst2.csv
-│   └── text_sample_trec.csv
-│   └── text_sample.csv
-└── main.py
+├── core/              # 학습/평가/해석/리포팅/튜닝/LLM/멀티모달 코어
+├── dashboard/         # Streamlit UI
+├── api/               # FastAPI 서버
+├── config/            # 모델 설정
+├── data/              # 샘플 데이터셋
+├── runs/              # 실험 아티팩트 저장
+└── main.py            # CLI 엔트리포인트
 ```
 
-## 설치
+## Quick Start
 
 ```bash
 pip install -r Easy_Deep_Learning/requirements.txt
+streamlit run Easy_Deep_Learning/dashboard/app.py
 ```
 
-## FastAPI 예측 서버
+## API Server
 
 ```bash
 uvicorn Easy_Deep_Learning.api.app:app --reload --port 8000
 ```
 
-요청 예시:
+Example:
 
 ```bash
 curl -X POST http://localhost:8000/predict \
@@ -83,155 +99,22 @@ curl -X POST http://localhost:8000/predict \
   -d '{"run_id":"<run_id>","records":[{"col1":1.2,"col2":"A"}]}'
 ```
 
-## CLI 사용법
+## Run Artifacts
 
-### 1) 학습
-
-```bash
-python Easy_Deep_Learning/main.py train \
-  --data Easy_Deep_Learning/data/example_dataset.csv \
-  --target-column target \
-  --task-type classification \
-  --model-type dnn \
-  --seed 42
-```
-
-모델 파라미터 커스터마이즈:
-
-```bash
-python Easy_Deep_Learning/main.py train \
-  --data Easy_Deep_Learning/data/example_dataset.csv \
-  --target-column target \
-  --task-type classification \
-  --model-type rf \
-  --model-params '{"n_estimators": 300, "max_depth": 6}'
-```
-
-Auto 모델 추천 사용:
-
-```bash
-python Easy_Deep_Learning/main.py train \
-  --data Easy_Deep_Learning/data/example_dataset.csv \
-  --target-column target \
-  --task-type classification \
-  --model-type auto
-```
-
-AutoML 리더보드:
-
-```bash
-python Easy_Deep_Learning/main.py automl \
-  --data Easy_Deep_Learning/data/example_dataset.csv \
-  --target-column target \
-  --task-type classification \
-  --max-models 6
-```
-
-### 2) 저장된 모델로 테스트
-
-```bash
-python Easy_Deep_Learning/main.py test \
-  --from-run <run_id> \
-  --data /path/to/new_test.csv
-```
-
-### 3) 이미지(CNN) 학습/테스트
-
-```bash
-python Easy_Deep_Learning/main.py image-train --dataset MNIST --epochs 5 --lr 0.001 --batch-size 64 --model-arch cnn
-python Easy_Deep_Learning/main.py image-train --dataset SVHN --epochs 5 --lr 0.001 --batch-size 64 --model-arch resnet18
-python Easy_Deep_Learning/main.py image-test --from-run <run_id>
-```
-
-### 4) 텍스트(RNN) 학습/테스트
-
-```bash
-python Easy_Deep_Learning/main.py text-train --dataset AG_NEWS_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch gru
-python Easy_Deep_Learning/main.py text-train --dataset SST2_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch lstm --stopwords --ngram 2
-python Easy_Deep_Learning/main.py text-train --dataset TREC_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch textcnn
-python Easy_Deep_Learning/main.py text-train --dataset TREC_SAMPLE --epochs 3 --lr 0.001 --batch-size 64 --model-arch transformer --bpe --bpe-vocab-size 300
-python Easy_Deep_Learning/main.py text-test --from-run <run_id>
-```
-
-### 5) Tool-Using Agent
-
-```bash
-python Easy_Deep_Learning/main.py agent \
-  --data Easy_Deep_Learning/data/example_dataset.csv \
-  --target-column target \
-  --task-type classification
-```
-
-### 6) RAG + Auto Evaluation
-
-```bash
-echo -e "Document one about ML.\nDocument two about NLP." > /tmp/docs.txt
-python Easy_Deep_Learning/main.py rag --query "What is NLP?" --docs /tmp/docs.txt
-```
-
-### 7) Multimodal Search (Streamlit)
-
-- Multimodal 탭에서 텍스트/이미지 업로드 후 검색 실행
-
-### 8) Auto Tuning
-
-```bash
-python Easy_Deep_Learning/main.py tune \
-  --data Easy_Deep_Learning/data/example_dataset.csv \
-  --target-column target \
-  --task-type classification \
-  --model-type rf \
-  --max-trials 10
-```
-
-### 9) Run Comparison Report
-
-```bash
-python Easy_Deep_Learning/main.py compare --run-ids <run_id_1>,<run_id_2>
-```
-
-커스텀 텍스트 CSV 사용:
-
-```bash
-python Easy_Deep_Learning/main.py text-train \
-  --data /path/to/text.csv \
-  --text-column text \
-  --label-column label
-```
-
-## 실행 아티팩트
-
-학습 실행마다 `runs/{run_id}` 생성:
+각 실행은 `runs/{run_id}`에 저장되며, 대표 아티팩트는 아래와 같습니다.
 
 - `config_snapshot.yaml`
-- `validation_report.json`
 - `metrics.json`
-- `feature_names.json`
-- `model_params.json`
-- `preprocessor.joblib`
-- `model.json` 또는 `model.model` 또는 `model.pt`
 - `model_info.json`
-- `config_hash.txt`
+- `model artifact` (`.json/.model/.pt`)
+- `preprocessor.joblib`
 - `report.html`
-- `auto_recommendation.json` (auto 사용 시)
-- `leaderboard.json`, `best_run.json` (automl 사용 시)
-- `predictions_preview.json`
-- `confusion_matrix.png` (분류 모델)
-- `roc_curve.png` (이진 분류 + 확률 출력 가능)
-- `prediction_scatter.png` (회귀 모델)
+- `ai_report.json`
+- `top_features.json`
+- `error_analysis.json`
+- `drift_report.json`
 
-## 대시보드
+## Positioning (Portfolio)
 
-```bash
-streamlit run Easy_Deep_Learning/dashboard/app.py
-```
-
-- **Train Model 탭**: 데이터 업로드 → 모델 선택/파라미터 조정 → 학습
-- **Test Saved Model 탭**: run_id 선택 + 테스트 CSV 업로드 → 재평가
-- **Image Models 탭**: MNIST/FashionMNIST/CIFAR10 CNN 데모
-- **Text Models 탭**: 샘플 텍스트 데이터 또는 CSV 업로드로 RNN 데모
-- **Agent 탭**: 데이터 요약 + 모델 추천 툴 호출 데모
-- **RAG 탭**: 문서 입력 → 검색 → 답변 + 자동 평가
-- **Multimodal 탭**: 이미지/텍스트 업로드 → 유사도 검색
-- **Chatbot 탭**: GitHub 링크/README 입력 → 기능/사용법 요약
-- **Tabular 탭**: 학습/테스트 결과 + AI 리포트 + SHAP/PDP/ICE 아티팩트 확인
+이 프로젝트는 “모델 하나를 학습하는 코드”가 아니라,  
+**실험-해석-리포트-서빙까지 연결한 AI 플랫폼 설계/구현 역량**을 보여주는 포트폴리오 프로젝트입니다.
