@@ -206,6 +206,58 @@ def show_tab_help(title: str, items: list[str]) -> None:
         for item in items:
             st.write(f"- {item}")
 
+
+def tab_mode(key: str) -> bool:
+    """Return True when current tab is in advanced mode."""
+    mode = st.radio(
+        "Mode",
+        options=["Quick Action", "Advanced"],
+        index=0,
+        horizontal=True,
+        key=f"{key}_mode",
+    )
+    return mode == "Advanced"
+
+
+def render_metric_cards(metrics: dict[str, Any]) -> None:
+    """Render standardized metric card layout."""
+    if not metrics:
+        st.info("No metrics available.")
+        return
+    cols = st.columns(max(1, min(4, len(metrics))))
+    for i, (k, v) in enumerate(metrics.items()):
+        try:
+            cols[i % len(cols)].metric(label=k, value=f"{float(v):.4f}")
+        except Exception:
+            cols[i % len(cols)].metric(label=k, value=str(v))
+
+
+def error_hint_message(exc: Exception) -> str:
+    msg = str(exc)
+    lower = msg.lower()
+    if "no module named" in lower:
+        return "Dependency issue: install missing package (`pip install -r ...`)."
+    if "out of memory" in lower or "cuda" in lower:
+        return "Memory issue: reduce batch size/model size or run on CPU."
+    if "permission" in lower or "operation not permitted" in lower:
+        return "Permission issue: check file path/write permissions."
+    return "Check input data/schema and dependency versions."
+
+
+def run_with_feedback(label: str, fn):
+    """Run long action with progress and standardized failure guidance."""
+    progress = st.progress(0, text=f"{label}: starting")
+    try:
+        progress.progress(20, text=f"{label}: preparing")
+        out = fn(progress)
+        progress.progress(100, text=f"{label}: done")
+        return out
+    except Exception as exc:
+        progress.empty()
+        st.error(f"{label} failed: {exc}")
+        st.info(error_hint_message(exc))
+        return None
+
 @st.cache_data
 def load_preset_dataset(name: str) -> tuple[pd.DataFrame, str]:
     """Load a built-in dataset and return (df, target_column)."""
@@ -690,6 +742,7 @@ if default_tab not in tab_labels:
 active_tab = render_navigation(st, tab_labels, default_tab, key="active_tab")
 
 if active_tab == "Tabular":
+    tabular_advanced = tab_mode("tabular")
     train_view, test_view, compare_view = st.tabs(["Train", "Test", "Compare"])
 
     with train_view:
@@ -722,7 +775,7 @@ if active_tab == "Tabular":
                     index=default_target,
                 )
 
-                if st.session_state.get("ui_advanced", False):
+                if tabular_advanced or st.session_state.get("ui_advanced", False):
                     show_data_profile(train_df, target_col)
                     show_dataset_summary(train_df, target_col)
 
@@ -763,57 +816,70 @@ if active_tab == "Tabular":
                 if st.button("학습 실행", type="primary"):
                     tmp_train_path = Path("/tmp/easy_dl_train.csv")
                     train_df.to_csv(tmp_train_path, index=False)
+                    result = run_with_feedback(
+                        "Training",
+                        lambda p: (
+                            p.progress(60, text="Training: fitting model"),
+                            train_and_save(
+                                data_path=tmp_train_path,
+                                config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
+                                target_column=target_col,
+                                task_type=task_type,
+                                model_type=model_type,
+                                seed=int(seed),
+                                model_params=params,
+                                reuse_if_exists=bool(reuse_existing),
+                            ),
+                        )[1],
+                    )
+                    if result is not None:
+                        st.success(f"완료: run_id={result.run_id}")
+                        st.subheader("Result Summary")
+                        render_metric_cards(result.metrics)
+                        with st.expander("Result Details", expanded=False):
+                            st.code(str(result.run_path.resolve()))
+                            show_run_artifacts(result.run_path)
 
-                    with st.spinner("학습 및 아티팩트 저장 중..."):
-                        result = train_and_save(
-                            data_path=tmp_train_path,
-                            config_path=Path("Easy_Deep_Learning/config/model_config.yaml"),
-                            target_column=target_col,
-                            task_type=task_type,
-                            model_type=model_type,
-                            seed=int(seed),
-                            model_params=params,
-                            reuse_if_exists=bool(reuse_existing),
+                if tabular_advanced:
+                    st.subheader("Cross Validation")
+                    cv_folds = st.number_input("CV folds", min_value=3, max_value=10, value=5, step=1, key="tab_cv_folds")
+                    if st.button("Run Cross-Validation", type="secondary", key="tab_cv_run"):
+                        from Easy_Deep_Learning.core.workflows import cross_validate_and_report, save_cv_report
+
+                        tmp_train_path = Path("/tmp/easy_dl_train.csv")
+                        train_df.to_csv(tmp_train_path, index=False)
+                        cv_model_type = model_type
+                        if cv_model_type == "auto":
+                            cv_model_type, params = recommend_model(train_df, target_col, task_type)
+                            st.info(f"Auto 모델 선택: {cv_model_type}")
+                        cv_result = run_with_feedback(
+                            "Cross-validation",
+                            lambda p: (
+                                p.progress(60, text="Cross-validation: running folds"),
+                                cross_validate_and_report(
+                                    data_path=tmp_train_path,
+                                    target_column=target_col,
+                                    task_type=task_type,
+                                    model_type=cv_model_type,
+                                    seed=int(seed),
+                                    folds=int(cv_folds),
+                                    model_params=params,
+                                ),
+                            )[1],
                         )
+                        if cv_result is not None:
+                            cv_run_path = save_cv_report(cv_result)
+                            st.subheader("Result Summary")
+                            render_metric_cards(cv_result.get("mean_metrics", {}))
+                            with st.expander("Result Details", expanded=False):
+                                st.subheader("CV Metrics per Fold")
+                                st.dataframe(pd.DataFrame(cv_result.get("metrics", [])), use_container_width=True)
+                                st.code(str(cv_run_path.resolve()))
 
-                    st.success(f"완료: run_id={result.run_id}")
-                    cols = st.columns(max(1, len(result.metrics)))
-                    for i, (k, v) in enumerate(result.metrics.items()):
-                        cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
-                    st.code(str(result.run_path.resolve()))
-                    show_run_artifacts(result.run_path)
-
-                st.subheader("Cross Validation")
-                cv_folds = st.number_input("CV folds", min_value=3, max_value=10, value=5, step=1, key="tab_cv_folds")
-                if st.button("Run Cross-Validation", type="secondary", key="tab_cv_run"):
-                    from Easy_Deep_Learning.core.workflows import cross_validate_and_report, save_cv_report
-
-                    tmp_train_path = Path("/tmp/easy_dl_train.csv")
-                    train_df.to_csv(tmp_train_path, index=False)
-                    cv_model_type = model_type
-                    if cv_model_type == "auto":
-                        cv_model_type, params = recommend_model(train_df, target_col, task_type)
-                        st.info(f"Auto 모델 선택: {cv_model_type}")
-                    with st.spinner("Cross-validation running..."):
-                        cv_result = cross_validate_and_report(
-                            data_path=tmp_train_path,
-                            target_column=target_col,
-                            task_type=task_type,
-                            model_type=cv_model_type,
-                            seed=int(seed),
-                            folds=int(cv_folds),
-                            model_params=params,
-                        )
-                        cv_run_path = save_cv_report(cv_result)
-                    st.subheader("CV Mean Metrics")
-                    st.json(cv_result.get("mean_metrics", {}))
-                    st.subheader("CV Metrics per Fold")
-                    st.dataframe(pd.DataFrame(cv_result.get("metrics", [])), use_container_width=True)
-                    st.code(str(cv_run_path.resolve()))
-
-                st.subheader("AutoML Leaderboard")
-                max_models = st.number_input("Max models", min_value=2, max_value=10, value=6, step=1, key="tab_automl_max")
-                if st.button("Leaderboard 실행", type="secondary"):
+                if tabular_advanced:
+                    st.subheader("AutoML Leaderboard")
+                    max_models = st.number_input("Max models", min_value=2, max_value=10, value=6, step=1, key="tab_automl_max")
+                if tabular_advanced and st.button("Leaderboard 실행", type="secondary"):
                     tmp_train_path = Path("/tmp/easy_dl_train.csv")
                     train_df.to_csv(tmp_train_path, index=False)
 
@@ -844,7 +910,7 @@ if active_tab == "Tabular":
                         st.info(f"Best run: {best_run['run_id']} ({best_run['model_type']})")
 
                 last_lb = st.session_state.get("last_leaderboard")
-                if last_lb and last_lb.get("best_run"):
+                if tabular_advanced and last_lb and last_lb.get("best_run"):
                     best_run = last_lb["best_run"]
                     if st.button("Best run 재학습", type="primary", key="retrain_best"):
                         import yaml
@@ -873,15 +939,16 @@ if active_tab == "Tabular":
                             st.success(f"재학습 완료: run_id={result.run_id}")
                             st.code(str(result.run_path.resolve()))
 
-                st.subheader("Auto Tuning")
-                tune_model = st.selectbox(
-                    "Tuning model type",
-                    options=["rf", "gbm", "xgboost", "svm", "knn", "lr"],
-                    index=0,
-                    key="tab_tune_model",
-                )
-                max_trials = st.number_input("Max trials", min_value=3, max_value=30, value=10, step=1, key="tab_tune_trials")
-                if st.button("Auto Tuning 실행", type="secondary", key="tab_tune_run"):
+                if tabular_advanced:
+                    st.subheader("Auto Tuning")
+                    tune_model = st.selectbox(
+                        "Tuning model type",
+                        options=["rf", "gbm", "xgboost", "svm", "knn", "lr"],
+                        index=0,
+                        key="tab_tune_model",
+                    )
+                    max_trials = st.number_input("Max trials", min_value=3, max_value=30, value=10, step=1, key="tab_tune_trials")
+                if tabular_advanced and st.button("Auto Tuning 실행", type="secondary", key="tab_tune_run"):
                     tmp_train_path = Path("/tmp/easy_dl_train.csv")
                     train_df.to_csv(tmp_train_path, index=False)
 
@@ -896,8 +963,11 @@ if active_tab == "Tabular":
                             max_trials=int(max_trials),
                         )
                     st.success(f"튜닝 완료: run_id={result.run_id}")
-                    st.code(str(result.run_path.resolve()))
-                    show_run_artifacts(result.run_path)
+                    st.subheader("Result Summary")
+                    render_metric_cards(result.metrics)
+                    with st.expander("Result Details", expanded=False):
+                        st.code(str(result.run_path.resolve()))
+                        show_run_artifacts(result.run_path)
 
     with test_view:
         st.subheader("Test Saved Model")
@@ -943,7 +1013,7 @@ if active_tab == "Tabular":
             target_override = st.text_input("Target column override (선택)", value="")
 
         if test_df is not None:
-            if st.session_state.get("ui_advanced", False):
+            if tabular_advanced or st.session_state.get("ui_advanced", False):
                 show_data_profile(test_df, target_override or None)
                 show_dataset_summary(test_df, target_override or None)
 
@@ -954,29 +1024,31 @@ if active_tab == "Tabular":
                     tmp_test_path = Path("/tmp/easy_dl_test.csv")
                     test_df.to_csv(tmp_test_path, index=False)
 
-                    with st.spinner("저장된 모델로 평가 중..."):
-                        result = test_from_run(
-                            run_id=selected_run,
-                            test_data_path=tmp_test_path,
-                            target_column=target_override.strip() or None,
-                            save_artifacts=True,
-                        )
-
-                    st.success("평가 완료")
-                    metrics = result.get("metrics", {})
-                    cols = st.columns(max(1, len(metrics)))
-                    for i, (k, v) in enumerate(metrics.items()):
-                        cols[i % len(cols)].metric(label=k, value=f"{v:.4f}")
-
-                    st.subheader("Prediction Preview")
-                    preview = result.get("prediction_preview", {})
-                    st.dataframe(pd.DataFrame(preview), use_container_width=True)
-
-                    plot_confusion_and_roc(result)
-
-                    st.subheader("Result JSON")
-                    st.json(result)
-                    show_run_artifacts(Path("runs") / selected_run)
+                    result = run_with_feedback(
+                        "Testing",
+                        lambda p: (
+                            p.progress(70, text="Testing: inference and scoring"),
+                            test_from_run(
+                                run_id=selected_run,
+                                test_data_path=tmp_test_path,
+                                target_column=target_override.strip() or None,
+                                save_artifacts=True,
+                            ),
+                        )[1],
+                    )
+                    if result is not None:
+                        st.success("평가 완료")
+                        st.subheader("Result Summary")
+                        render_metric_cards(result.get("metrics", {}))
+                        with st.expander("Result Details", expanded=False):
+                            st.subheader("Prediction Preview")
+                            preview = result.get("prediction_preview", {})
+                            st.dataframe(pd.DataFrame(preview), use_container_width=True)
+                            plot_confusion_and_roc(result)
+                            if tabular_advanced:
+                                st.subheader("Result JSON")
+                                st.json(result)
+                            show_run_artifacts(Path("runs") / selected_run)
 
     with compare_view:
         show_tab_help("Tabular/Compare", [
@@ -1039,6 +1111,7 @@ if active_tab == "Tabular":
                         st.download_button("Download compare_report.html", f, file_name="compare_report.html", mime="text/html")
 
 if active_tab == "Image":
+    image_advanced = tab_mode("image")
     image_models_tab, image_det_tab = st.tabs(["Image Models", "Image Detection"])
 
     with image_models_tab:
@@ -1102,24 +1175,33 @@ if active_tab == "Image":
                 if st.button("Train CNN", type="primary"):
                     from Easy_Deep_Learning.core.torch_workflows import train_cnn_image
 
-                    with st.spinner("Training CNN..."):
-                        result = train_cnn_image(
-                            dataset_name=dataset,
-                            epochs=int(epochs),
-                            lr=float(lr),
-                            batch_size=int(batch_size),
-                            seed=int(seed),
-                            data_dir=Path(data_dir),
-                            model_arch=model_arch,
-                            use_pretrained=bool(use_pretrained),
-                            reuse_if_exists=bool(reuse_existing),
-                        )
-                    st.success(f"완료: run_id={result.run_id}")
-                    st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
-                    st.code(str(result.run_path.resolve()))
+                    result = run_with_feedback(
+                        "Image training",
+                        lambda p: (
+                            p.progress(60, text="Image training: fitting"),
+                            train_cnn_image(
+                                dataset_name=dataset,
+                                epochs=int(epochs),
+                                lr=float(lr),
+                                batch_size=int(batch_size),
+                                seed=int(seed),
+                                data_dir=Path(data_dir),
+                                model_arch=model_arch,
+                                use_pretrained=bool(use_pretrained),
+                                reuse_if_exists=bool(reuse_existing),
+                            ),
+                        )[1],
+                    )
+                    if result is not None:
+                        st.success(f"완료: run_id={result.run_id}")
+                        st.subheader("Result Summary")
+                        render_metric_cards(result.metrics)
+                        with st.expander("Result Details", expanded=False):
+                            st.code(str(result.run_path.resolve()))
 
-                st.subheader("Dataset Preview")
-                if st.button("Load Preview", key="img_preview"):
+                if image_advanced:
+                    st.subheader("Dataset Preview")
+                if image_advanced and st.button("Load Preview", key="img_preview"):
                     import torchvision
                     from torchvision import transforms
 
@@ -1160,16 +1242,20 @@ if active_tab == "Image":
                 if st.button("Test CNN", type="secondary") and selected_cnn:
                     from Easy_Deep_Learning.core.torch_workflows import test_cnn_image
 
-                    with st.spinner("Testing CNN..."):
-                        result = test_cnn_image(selected_cnn)
-                    st.metric("accuracy", f"{result['accuracy']:.4f}")
+                    result = run_with_feedback(
+                        "Image testing",
+                        lambda p: (p.progress(70, text="Image testing: evaluating"), test_cnn_image(selected_cnn))[1],
+                    )
+                    if result is not None:
+                        st.subheader("Result Summary")
+                        render_metric_cards({"accuracy": result["accuracy"]})
 
                 st.subheader("Custom Image Prediction")
                 uploaded_imgs = st.file_uploader("Upload images", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="img_upload")
                 pred_run = st.selectbox("Run ID for prediction", options=cnn_runs, key="img_pred_run")
                 show_cam = st.checkbox("Show Grad-CAM", value=False, key="img_cam")
                 if uploaded_imgs and pred_run:
-                    if show_cam:
+                    if show_cam and image_advanced:
                         from Easy_Deep_Learning.core.torch_workflows import predict_cnn_images_with_cam
                         import matplotlib.cm as cm
 
@@ -1294,6 +1380,7 @@ if active_tab == "Image":
             st.info("이미지를 준비하세요.")
 
 if active_tab == "Text Models":
+    text_advanced = tab_mode("text")
     text_rnn_tab, text_xfm_tab = st.tabs(["RNN", "Transformer"])
 
     with text_rnn_tab:
@@ -1337,12 +1424,13 @@ if active_tab == "Text Models":
             max_vocab = st.number_input("Max vocab", min_value=100, max_value=50000, value=5000, step=100, key="txt_vocab")
             max_len = st.number_input("Max length", min_value=10, max_value=400, value=100, step=10, key="txt_len")
 
-            st.subheader("Text Preview")
-            if text_df is not None:
-                preview_cols = [c for c in [text_col, label_col] if c in text_df.columns]
-                st.dataframe(text_df[preview_cols].head(20), use_container_width=True)
-            else:
-                st.info("텍스트 데이터가 없습니다.")
+            if text_advanced:
+                st.subheader("Text Preview")
+                if text_df is not None:
+                    preview_cols = [c for c in [text_col, label_col] if c in text_df.columns]
+                    st.dataframe(text_df[preview_cols].head(20), use_container_width=True)
+                else:
+                    st.info("텍스트 데이터가 없습니다.")
 
         with st.expander("Step 2: Preprocessing & Model", expanded=True):
             st.subheader("Preprocessing")
@@ -1374,31 +1462,37 @@ if active_tab == "Text Models":
                     tmp_text_path = Path("/tmp/easy_dl_text.csv")
                     text_df.to_csv(tmp_text_path, index=False)
 
-                    with st.spinner("Training RNN..."):
-                        result = train_rnn_text(
-                            dataset_name=(
-                                dataset_choice if dataset_choice != "Upload CSV" else "CUSTOM"
+                    result = run_with_feedback(
+                        "Text training (RNN)",
+                        lambda p: (
+                            p.progress(60, text="Text training: fitting"),
+                            train_rnn_text(
+                                dataset_name=(dataset_choice if dataset_choice != "Upload CSV" else "CUSTOM"),
+                                epochs=int(epochs),
+                                lr=float(lr),
+                                batch_size=int(batch_size),
+                                seed=int(seed),
+                                data_dir=Path(data_dir),
+                                data_path=tmp_text_path,
+                                text_column=text_col,
+                                label_column=label_col,
+                                max_vocab=int(max_vocab),
+                                max_len=int(max_len),
+                                stopwords=bool(stopwords),
+                                ngram=int(ngram),
+                                bpe=bool(bpe),
+                                bpe_vocab_size=int(bpe_vocab_size),
+                                model_arch=model_arch,
+                                reuse_if_exists=bool(reuse_existing),
                             ),
-                            epochs=int(epochs),
-                            lr=float(lr),
-                            batch_size=int(batch_size),
-                            seed=int(seed),
-                            data_dir=Path(data_dir),
-                            data_path=tmp_text_path,
-                            text_column=text_col,
-                            label_column=label_col,
-                            max_vocab=int(max_vocab),
-                            max_len=int(max_len),
-                            stopwords=bool(stopwords),
-                            ngram=int(ngram),
-                            bpe=bool(bpe),
-                            bpe_vocab_size=int(bpe_vocab_size),
-                            model_arch=model_arch,
-                            reuse_if_exists=bool(reuse_existing),
-                        )
-                    st.success(f"완료: run_id={result.run_id}")
-                    st.metric("test_accuracy", f"{result.metrics['test_accuracy']:.4f}")
-                    st.code(str(result.run_path.resolve()))
+                        )[1],
+                    )
+                    if result is not None:
+                        st.success(f"완료: run_id={result.run_id}")
+                        st.subheader("Result Summary")
+                        render_metric_cards(result.metrics)
+                        with st.expander("Result Details", expanded=False):
+                            st.code(str(result.run_path.resolve()))
 
             st.subheader("Test Saved RNN")
             runs_dir = Path("runs")
@@ -1408,9 +1502,13 @@ if active_tab == "Text Models":
             if st.button("Test RNN", type="secondary") and selected_rnn:
                 from Easy_Deep_Learning.core.torch_workflows import test_rnn_text
 
-                with st.spinner("Testing RNN..."):
-                    result = test_rnn_text(selected_rnn, data_path=None)
-                st.metric("test_accuracy", f"{result['test_accuracy']:.4f}")
+                result = run_with_feedback(
+                    "Text testing (RNN)",
+                    lambda p: (p.progress(70, text="Text testing: evaluating"), test_rnn_text(selected_rnn, data_path=None))[1],
+                )
+                if result is not None:
+                    st.subheader("Result Summary")
+                    render_metric_cards({"test_accuracy": result["test_accuracy"]})
 
     with text_xfm_tab:
         st.subheader("Text Models (Transformer)")
@@ -1458,23 +1556,32 @@ if active_tab == "Text Models":
                 text_df.to_csv(tmp_text_path, index=False)
                 from Easy_Deep_Learning.core.text_transformers import train_text_transformer
 
-                with st.spinner("Training Transformer..."):
-                    result = train_text_transformer(
-                        data_path=tmp_text_path,
-                        text_column=text_col,
-                        label_column=label_col,
-                        model_name=model_name,
-                        epochs=int(epochs),
-                        lr=float(lr),
-                        batch_size=int(batch_size),
-                        seed=int(seed),
-                        reuse_if_exists=bool(reuse_existing),
-                    )
-                st.success(f"완료: run_id={result.run_id}")
-                st.metric("accuracy", f"{result.metrics['accuracy']:.4f}")
-                st.code(str(result.run_path.resolve()))
+                result = run_with_feedback(
+                    "Text training (Transformer)",
+                    lambda p: (
+                        p.progress(60, text="Transformer training: fitting"),
+                        train_text_transformer(
+                            data_path=tmp_text_path,
+                            text_column=text_col,
+                            label_column=label_col,
+                            model_name=model_name,
+                            epochs=int(epochs),
+                            lr=float(lr),
+                            batch_size=int(batch_size),
+                            seed=int(seed),
+                            reuse_if_exists=bool(reuse_existing),
+                        ),
+                    )[1],
+                )
+                if result is not None:
+                    st.success(f"완료: run_id={result.run_id}")
+                    st.subheader("Result Summary")
+                    render_metric_cards(result.metrics)
+                    with st.expander("Result Details", expanded=False):
+                        st.code(str(result.run_path.resolve()))
 
 if active_tab == "Fine-tune":
+    finetune_advanced = tab_mode("finetune")
     st.subheader("Easy Fine-tuning")
     show_tab_help("Fine-tune", [
         "Image: class 폴더 구조 ZIP 업로드",
@@ -1648,33 +1755,35 @@ if active_tab == "Fine-tune":
                     st.json(result.metrics)
                     st.code(str(result.run_path.resolve()))
 
-            st.subheader("LLM Inference (LoRA)")
-            runs_dir = Path("runs")
-            llm_runs = sorted([p.name for p in runs_dir.iterdir() if p.is_dir() and p.name.endswith("_llm_finetune")], reverse=True) if runs_dir.exists() else []
-            llm_run = st.selectbox("LLM run_id", options=llm_runs, key="ft_llm_run_select")
-            prompt = st.text_area("Prompt", height=140, key="ft_llm_prompt")
-            max_new_tokens = st.number_input("Max new tokens", min_value=16, max_value=512, value=128, step=16, key="ft_llm_gen_len")
-            temperature = st.number_input("Temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1, key="ft_llm_temp")
-            top_p = st.number_input("Top-p", min_value=0.1, max_value=1.0, value=0.9, step=0.05, key="ft_llm_top_p")
-            if st.button("Generate", type="secondary", key="ft_llm_generate"):
-                if not llm_run:
-                    st.error("LLM run_id를 선택하세요.")
-                elif not prompt.strip():
-                    st.error("프롬프트를 입력하세요.")
-                else:
-                    from Easy_Deep_Learning.core.llm_finetune import generate_with_lora
+            if finetune_advanced:
+                st.subheader("LLM Inference (LoRA)")
+                runs_dir = Path("runs")
+                llm_runs = sorted([p.name for p in runs_dir.iterdir() if p.is_dir() and p.name.endswith("_llm_finetune")], reverse=True) if runs_dir.exists() else []
+                llm_run = st.selectbox("LLM run_id", options=llm_runs, key="ft_llm_run_select")
+                prompt = st.text_area("Prompt", height=140, key="ft_llm_prompt")
+                max_new_tokens = st.number_input("Max new tokens", min_value=16, max_value=512, value=128, step=16, key="ft_llm_gen_len")
+                temperature = st.number_input("Temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1, key="ft_llm_temp")
+                top_p = st.number_input("Top-p", min_value=0.1, max_value=1.0, value=0.9, step=0.05, key="ft_llm_top_p")
+                if st.button("Generate", type="secondary", key="ft_llm_generate"):
+                    if not llm_run:
+                        st.error("LLM run_id를 선택하세요.")
+                    elif not prompt.strip():
+                        st.error("프롬프트를 입력하세요.")
+                    else:
+                        from Easy_Deep_Learning.core.llm_finetune import generate_with_lora
 
-                    with st.spinner("Generating..."):
-                        output = generate_with_lora(
-                            run_path=Path("runs") / llm_run,
-                            prompt=prompt,
-                            max_new_tokens=int(max_new_tokens),
-                            temperature=float(temperature),
-                            top_p=float(top_p),
-                        )
-                    st.text_area("Output", value=output, height=200)
+                        with st.spinner("Generating..."):
+                            output = generate_with_lora(
+                                run_path=Path("runs") / llm_run,
+                                prompt=prompt,
+                                max_new_tokens=int(max_new_tokens),
+                                temperature=float(temperature),
+                                top_p=float(top_p),
+                            )
+                        st.text_area("Output", value=output, height=200)
 
 if active_tab == "Audio Demo":
+    audio_advanced = tab_mode("audio")
     st.subheader("Audio Demo (WAV)")
     show_tab_help("Audio", [
         "샘플/업로드/녹음 오디오 선택",
@@ -1782,9 +1891,10 @@ if active_tab == "Audio Demo":
         st.audio(webrtc_wav, format="audio/wav")
         st.download_button("Download recording", data=webrtc_wav, file_name="recording.wav", mime="audio/wav")
 
-    st.subheader("ASR (Speech → Text)")
-    ref_text = st.text_input("Reference text (optional)", value="", key="asr_ref")
-    if st.button("Transcribe Audio", type="secondary"):
+    if audio_advanced:
+        st.subheader("ASR (Speech → Text)")
+    ref_text = st.text_input("Reference text (optional)", value="", key="asr_ref") if audio_advanced else ""
+    if audio_advanced and st.button("Transcribe Audio", type="secondary"):
         try:
             audio_bytes = uploaded.getvalue() if uploaded else (recorded.getvalue() if recorded else (webrtc_wav if webrtc_wav is not None else None))
             if audio_bytes is None:
@@ -1796,7 +1906,7 @@ if active_tab == "Audio Demo":
         except Exception as exc:
             st.error(f"Transcription failed: {exc}")
 
-    if "asr_text" in st.session_state:
+    if audio_advanced and "asr_text" in st.session_state:
         st.subheader("Transcription")
         st.write(st.session_state["asr_text"])
         if ref_text.strip():
@@ -1819,8 +1929,10 @@ if active_tab == "Audio Demo":
         label = "Low freq" if int(pred) == 0 else "High freq"
         st.metric("Audio Demo Prediction", label)
 
-    st.subheader("Audio Detection (Pretrained Models)")
-    st.caption("Keyword spotting / audio event classification (HF pretrained).")
+    if audio_advanced:
+        st.subheader("Audio Detection (Pretrained Models)")
+    if audio_advanced:
+        st.caption("Keyword spotting / audio event classification (HF pretrained).")
     audio_model_choices = [
         "superb/wav2vec2-base-superb-ks",
         "MIT/ast-finetuned-audioset-10-10-0.4593",
@@ -1831,7 +1943,7 @@ if active_tab == "Audio Demo":
     if audio_model == "custom":
         audio_model = st.text_input("Custom HF audio model", value="superb/wav2vec2-base-superb-ks", key="audio_model_custom")
     top_k = st.number_input("Top-K predictions", min_value=1, max_value=10, value=5, step=1, key="audio_topk")
-    if st.button("Run Audio Detection", type="secondary", key="audio_detect_run"):
+    if audio_advanced and st.button("Run Audio Detection", type="secondary", key="audio_detect_run"):
         from Easy_Deep_Learning.core.audio_models import classify_audio_bytes
         audio_bytes = None
         if uploaded is not None:
@@ -1858,6 +1970,7 @@ if active_tab == "Audio Demo":
                 st.error(f"Audio detection failed: {exc}")
 
 if active_tab == "Video":
+    video_advanced = tab_mode("video")
     video_demo_tab, video_det_tab = st.tabs(["Video Demo", "Video Detection"])
 
     with video_demo_tab:
@@ -1905,17 +2018,20 @@ if active_tab == "Video":
             st.info("프레임을 업로드하세요.")
 
     with video_det_tab:
-        st.subheader("Video Detection")
-        show_tab_help("Video Detection", [
-            "MP4 업로드 또는 샘플 사용",
-            "YOLO/RCNN 모델 선택",
-            "프레임 단위 디텍션 확인",
-        ])
-        st.caption("MP4 업로드 후 프레임 단위 객체 탐지 데모.")
-        from Easy_Deep_Learning.core.detection import detect_video_bytes
-        vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
-        use_builtin = st.checkbox("Use built-in sample video (requires opencv)", value=False, key="det_video_builtin")
-        model_choice = st.selectbox(
+        if not video_advanced:
+            st.info("Video Detection은 Advanced 모드에서 사용하세요.")
+        else:
+            st.subheader("Video Detection")
+            show_tab_help("Video Detection", [
+                "MP4 업로드 또는 샘플 사용",
+                "YOLO/RCNN 모델 선택",
+                "프레임 단위 디텍션 확인",
+            ])
+            st.caption("MP4 업로드 후 프레임 단위 객체 탐지 데모.")
+            from Easy_Deep_Learning.core.detection import detect_video_bytes
+            vid = st.file_uploader("Upload video (mp4)", type=["mp4", "mov", "avi"], key="det_video")
+            use_builtin = st.checkbox("Use built-in sample video (requires opencv)", value=False, key="det_video_builtin")
+            model_choice = st.selectbox(
             "Model",
             options=[
                 "YOLOv8n (ultralytics)",
@@ -1931,73 +2047,74 @@ if active_tab == "Video":
                 "Custom (ultralytics)",
             ],
             key="det_video_model",
-        )
-        conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_video_conf")
-        frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
-        max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
-        yolo_weights = "yolov8n.pt"
-        if model_choice != "Faster R-CNN (torchvision)":
-            yolo_map = {
-                "YOLOv8n (ultralytics)": "yolov8n.pt",
-                "YOLOv8s (ultralytics)": "yolov8s.pt",
-                "YOLOv8m (ultralytics)": "yolov8m.pt",
-                "YOLOv8l (ultralytics)": "yolov8l.pt",
-                "YOLOv8x (ultralytics)": "yolov8x.pt",
-                "YOLOv9c (ultralytics)": "yolov9c.pt",
-                "YOLOv10n (ultralytics)": "yolov10n.pt",
-                "YOLOv11n (ultralytics)": "yolov11n.pt",
-                "RT-DETR-L (ultralytics)": "rtdetr-l.pt",
-            }
-            yolo_weights = yolo_map.get(model_choice, "yolov8n.pt")
-            custom_yolo = st.text_input("Custom weights (optional)", value=yolo_weights, key="det_video_weights")
-            if custom_yolo:
-                yolo_weights = custom_yolo
+            )
+            conf = st.slider("Confidence", min_value=0.05, max_value=0.9, value=0.25, step=0.05, key="det_video_conf")
+            frame_stride = st.number_input("Frame stride", min_value=1, max_value=30, value=10, step=1, key="det_stride")
+            max_frames = st.number_input("Max frames", min_value=1, max_value=60, value=20, step=1, key="det_max_frames")
+            yolo_weights = "yolov8n.pt"
+            if model_choice != "Faster R-CNN (torchvision)":
+                yolo_map = {
+                    "YOLOv8n (ultralytics)": "yolov8n.pt",
+                    "YOLOv8s (ultralytics)": "yolov8s.pt",
+                    "YOLOv8m (ultralytics)": "yolov8m.pt",
+                    "YOLOv8l (ultralytics)": "yolov8l.pt",
+                    "YOLOv8x (ultralytics)": "yolov8x.pt",
+                    "YOLOv9c (ultralytics)": "yolov9c.pt",
+                    "YOLOv10n (ultralytics)": "yolov10n.pt",
+                    "YOLOv11n (ultralytics)": "yolov11n.pt",
+                    "RT-DETR-L (ultralytics)": "rtdetr-l.pt",
+                }
+                yolo_weights = yolo_map.get(model_choice, "yolov8n.pt")
+                custom_yolo = st.text_input("Custom weights (optional)", value=yolo_weights, key="det_video_weights")
+                if custom_yolo:
+                    yolo_weights = custom_yolo
 
-        if use_builtin:
-            try:
-                import cv2
-                import tempfile
-
-                h, w = 240, 320
-                fps = 12
-                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-                writer = cv2.VideoWriter(tmp.name, fourcc, fps, (w, h))
-                for i in range(60):
-                    frame = np.zeros((h, w, 3), dtype=np.uint8)
-                    cx = int((i / 59) * (w - 40))
-                    cy = int((i / 59) * (h - 40))
-                    frame[cy:cy+40, cx:cx+40, :] = (0, 255, 0)
-                    writer.write(frame)
-                writer.release()
-                vid_bytes = Path(tmp.name).read_bytes()
-                vid = type("obj", (), {"read": lambda self: vid_bytes})()
-            except Exception as exc:
-                st.error(f"Built-in video failed: {exc}")
-                st.info("OpenCV 설치가 필요합니다: pip install opencv-python")
-
-        if vid:
-            if st.button("Run Video Detection", type="primary", key="det_video_run"):
+            if use_builtin:
                 try:
-                    frames, dets = detect_video_bytes(
-                        video_bytes=vid.read(),
-                        model_type="yolo" if model_choice != "Faster R-CNN (torchvision)" else "fasterrcnn",
-                        conf=conf,
-                        model_name=yolo_weights,
-                        frame_stride=int(frame_stride),
-                        max_frames=int(max_frames),
-                    )
-                    st.subheader("Detected Frames")
-                    if frames:
-                        st.image(frames, width=180)
-                    st.subheader("Detections (sample)")
-                    st.json(dets[:3])
+                    import cv2
+                    import tempfile
+
+                    h, w = 240, 320
+                    fps = 12
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+                    writer = cv2.VideoWriter(tmp.name, fourcc, fps, (w, h))
+                    for i in range(60):
+                        frame = np.zeros((h, w, 3), dtype=np.uint8)
+                        cx = int((i / 59) * (w - 40))
+                        cy = int((i / 59) * (h - 40))
+                        frame[cy:cy+40, cx:cx+40, :] = (0, 255, 0)
+                        writer.write(frame)
+                    writer.release()
+                    vid_bytes = Path(tmp.name).read_bytes()
+                    vid = type("obj", (), {"read": lambda self: vid_bytes})()
                 except Exception as exc:
-                    st.error(f"Video detection failed: {exc}")
-        else:
-            st.info("비디오를 업로드하세요.")
+                    st.error(f"Built-in video failed: {exc}")
+                    st.info("OpenCV 설치가 필요합니다: pip install opencv-python")
+
+            if vid:
+                if st.button("Run Video Detection", type="primary", key="det_video_run"):
+                    try:
+                        frames, dets = detect_video_bytes(
+                            video_bytes=vid.read(),
+                            model_type="yolo" if model_choice != "Faster R-CNN (torchvision)" else "fasterrcnn",
+                            conf=conf,
+                            model_name=yolo_weights,
+                            frame_stride=int(frame_stride),
+                            max_frames=int(max_frames),
+                        )
+                        st.subheader("Detected Frames")
+                        if frames:
+                            st.image(frames, width=180)
+                        st.subheader("Detections (sample)")
+                        st.json(dets[:3])
+                    except Exception as exc:
+                        st.error(f"Video detection failed: {exc}")
+            else:
+                st.info("비디오를 업로드하세요.")
 
 if active_tab == "Agent":
+    agent_advanced = tab_mode("agent")
     show_tab_help("Agent", [
         "CSV 업로드 후 타겟 컬럼 지정",
         "도구 기반 분석 요약 확인",
@@ -2038,16 +2155,16 @@ if active_tab == "Agent":
                     tools=make_default_tools(),
                 )
 
-            st.subheader("Tool Calls")
-            st.json([call.__dict__ for call in result.tool_calls])
-
-            st.subheader("Tool Results")
-            st.json([res.__dict__ for res in result.tool_results])
-
             st.subheader("Summary")
             st.write(result.final_summary)
+            if agent_advanced:
+                st.subheader("Tool Calls")
+                st.json([call.__dict__ for call in result.tool_calls])
+                st.subheader("Tool Results")
+                st.json([res.__dict__ for res in result.tool_results])
 
 if active_tab == "RAG":
+    rag_advanced = tab_mode("rag")
     show_tab_help("RAG", [
         "텍스트 문서 업로드",
         "질문 입력 후 컨텍스트 기반 답변",
@@ -2077,14 +2194,16 @@ if active_tab == "RAG":
             )
             st.subheader("Answer")
             st.write(result.answer)
-            st.subheader("Contexts")
-            for i, ctx in enumerate(result.contexts):
-                st.write(f"[{i+1}] score={result.scores[i]:.3f}")
-                st.write(ctx)
-            st.subheader("Auto Evaluation")
-            st.json(result.eval)
+            if rag_advanced:
+                st.subheader("Contexts")
+                for i, ctx in enumerate(result.contexts):
+                    st.write(f"[{i+1}] score={result.scores[i]:.3f}")
+                    st.write(ctx)
+                st.subheader("Auto Evaluation")
+                st.json(result.eval)
 
 if active_tab == "Multimodal":
+    mm_advanced = tab_mode("mm")
     show_tab_help("Multimodal", [
         "텍스트/이미지 입력",
         "멀티모달 매칭 결과 확인",
@@ -2136,6 +2255,10 @@ if active_tab == "Multimodal":
                 results = search_by_text(index, query_text, top_k=int(top_k))
                 st.json(results)
         with col2:
+            if not mm_advanced:
+                st.info("Image query는 Advanced 모드에서 사용 가능합니다.")
+            if not mm_advanced:
+                query_image = None
             if query_image is not None:
                 st.subheader("Image → Image/Text Results")
                 img = Image.open(query_image).convert("RGB")
@@ -2143,6 +2266,7 @@ if active_tab == "Multimodal":
                 st.json(results)
 
 if active_tab == "GitHub Summary":
+    summary_advanced = tab_mode("summary")
     show_tab_help("GitHub Summary", [
         "GitHub URL 입력",
         "README 요약 및 주요 정보 확인",
@@ -2188,7 +2312,7 @@ if active_tab == "GitHub Summary":
                 st.subheader("Notes")
                 st.write(result.notes)
 
-    if st.button("Analyze Repo", type="secondary"):
+    if summary_advanced and st.button("Analyze Repo", type="secondary"):
         from Easy_Deep_Learning.core.chatbot import summarize_github_repo
 
         if not github_url.strip():
@@ -2208,6 +2332,7 @@ if active_tab == "GitHub Summary":
                 st.error(f"분석 실패: {exc}")
 
 if active_tab == "Chatbot":
+    chat_advanced = tab_mode("chat")
     st.subheader("Chatbot")
     st.caption("질문형 챗봇입니다. GitHub 링크를 포함한 질문에 답변합니다. (옵션: LLM 파인튜닝 모델)")
     show_tab_help("Chatbot", [
@@ -2217,7 +2342,7 @@ if active_tab == "Chatbot":
 
     runs_dir = Path("runs")
     llm_runs = sorted([p.name for p in runs_dir.iterdir() if p.is_dir() and p.name.endswith("_llm_finetune")], reverse=True) if runs_dir.exists() else []
-    use_llm = st.checkbox("Use fine-tuned LLM", value=False, key="chat_use_llm")
+    use_llm = st.checkbox("Use fine-tuned LLM", value=False, key="chat_use_llm") if chat_advanced else False
     llm_run = None
     if use_llm:
         llm_run = st.selectbox("LLM run_id", options=llm_runs, key="chat_llm_run")
