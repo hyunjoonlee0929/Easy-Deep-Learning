@@ -27,6 +27,27 @@ logger = logging.getLogger(__name__)
 st.set_page_config(page_title="Easy Deep Learning", layout="wide")
 st.title("Easy Deep Learning")
 st.caption("CSV 기반 분류/회귀 모델 학습, 저장, 재평가를 빠르게 수행합니다.")
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Manrope', sans-serif; }
+    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1280px; }
+    h1, h2, h3 { letter-spacing: -0.01em; }
+    div[data-testid="stMetric"] {
+        border: 1px solid #e8ecef;
+        border-radius: 12px;
+        padding: 10px 14px;
+        background: #fbfcfd;
+    }
+    div.stButton > button, div.stDownloadButton > button {
+        border-radius: 10px;
+        border: 1px solid #d7dde3;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.sidebar.header("Quick Start (Optional)")
 with st.sidebar.expander("How it works", expanded=False):
@@ -128,6 +149,10 @@ if st.sidebar.button("Clear Quick Preset"):
         if key in st.session_state:
             del st.session_state[key]
 
+st.sidebar.header("View Options")
+show_guides = st.sidebar.checkbox("Show usage guides", value=False, key="ui_show_guides")
+advanced_ui = st.sidebar.checkbox("Show advanced panels", value=False, key="ui_advanced")
+
 st.sidebar.header("OpenAI API Key")
 api_key_input = st.sidebar.text_input("API Key", type="password", value=st.session_state.get("openai_api_key", ""))
 if api_key_input:
@@ -174,6 +199,8 @@ if selected_sidebar_run:
 
 
 def show_tab_help(title: str, items: list[str]) -> None:
+    if not st.session_state.get("ui_show_guides", False):
+        return
     with st.expander(f"{title} 사용 방법", expanded=False):
         for item in items:
             st.write(f"- {item}")
@@ -413,9 +440,10 @@ def show_run_artifacts(run_path: Path) -> None:
             st.markdown("**Next Steps**")
             for item in next_steps:
                 st.write(f"- {item}")
-        show_raw = st.checkbox("Show raw AI report JSON", value=False, key=f"ai_raw_{run_path.name}")
-        if show_raw:
-            st.json(payload)
+        if st.session_state.get("ui_advanced", False):
+            show_raw = st.checkbox("Show raw AI report JSON", value=False, key=f"ai_raw_{run_path.name}")
+            if show_raw:
+                st.json(payload)
 
     rec_path = run_path / "recommendations.json"
     if rec_path.exists():
@@ -426,13 +454,14 @@ def show_run_artifacts(run_path: Path) -> None:
             st.markdown("**Priority**")
             for item in priority:
                 st.write(f"- {item}")
-        show_all = st.checkbox(
-            "Show all recommendations",
-            value=False,
-            key=f"rec_all_{run_path.name}",
-        )
-        if show_all:
-            st.json(rec_payload)
+        if st.session_state.get("ui_advanced", False):
+            show_all = st.checkbox(
+                "Show all recommendations",
+                value=False,
+                key=f"rec_all_{run_path.name}",
+            )
+            if show_all:
+                st.json(rec_payload)
 
     quality_path = run_path / "data_quality.json"
     if quality_path.exists():
@@ -449,9 +478,10 @@ def show_run_artifacts(run_path: Path) -> None:
                     st.warning(msg)
                 else:
                     st.info(msg)
-        show_raw = st.checkbox("Show raw data quality JSON", value=False, key=f"quality_raw_{run_path.name}")
-        if show_raw:
-            st.json(quality_payload)
+        if st.session_state.get("ui_advanced", False):
+            show_raw = st.checkbox("Show raw data quality JSON", value=False, key=f"quality_raw_{run_path.name}")
+            if show_raw:
+                st.json(quality_payload)
 
     drift_path = run_path / "drift_report.json"
     if drift_path.exists():
@@ -468,17 +498,19 @@ def show_run_artifacts(run_path: Path) -> None:
                     st.warning(msg)
                 else:
                     st.info(msg)
-        show_raw = st.checkbox("Show raw drift JSON", value=False, key=f"drift_raw_{run_path.name}")
-        if show_raw:
-            st.json(drift_payload)
+        if st.session_state.get("ui_advanced", False):
+            show_raw = st.checkbox("Show raw drift JSON", value=False, key=f"drift_raw_{run_path.name}")
+            if show_raw:
+                st.json(drift_payload)
 
     uncertainty_path = run_path / "uncertainty.json"
     if uncertainty_path.exists():
         st.subheader("Uncertainty")
         payload = json.loads(uncertainty_path.read_text(encoding="utf-8"))
-        show_raw = st.checkbox("Show raw uncertainty JSON", value=False, key=f"unc_raw_{run_path.name}")
-        if show_raw:
-            st.json(payload)
+        if st.session_state.get("ui_advanced", False):
+            show_raw = st.checkbox("Show raw uncertainty JSON", value=False, key=f"unc_raw_{run_path.name}")
+            if show_raw:
+                st.json(payload)
 
     best_params_path = run_path / "best_params.json"
     if best_params_path.exists():
@@ -690,8 +722,9 @@ if active_tab == "Tabular":
                     index=default_target,
                 )
 
-                show_data_profile(train_df, target_col)
-                show_dataset_summary(train_df, target_col)
+                if st.session_state.get("ui_advanced", False):
+                    show_data_profile(train_df, target_col)
+                    show_dataset_summary(train_df, target_col)
 
                 task_type_options = ["classification", "regression"]
                 quick_task = st.session_state.get("quick_task_type")
@@ -910,8 +943,9 @@ if active_tab == "Tabular":
             target_override = st.text_input("Target column override (선택)", value="")
 
         if test_df is not None:
-            show_data_profile(test_df, target_override or None)
-            show_dataset_summary(test_df, target_override or None)
+            if st.session_state.get("ui_advanced", False):
+                show_data_profile(test_df, target_override or None)
+                show_dataset_summary(test_df, target_override or None)
 
             if st.button("테스트 실행", type="primary"):
                 if not selected_run:
@@ -1980,7 +2014,8 @@ if active_tab == "Agent":
         )
         agent_task_type = st.selectbox("Task type", options=["classification", "regression"], index=0, key="agent_task")
 
-        show_dataset_summary(agent_df, agent_target_col)
+        if st.session_state.get("ui_advanced", False):
+            show_dataset_summary(agent_df, agent_target_col)
 
         if st.button("Run Agent", type="primary"):
             from Easy_Deep_Learning.agents.tool_agent import AgentInput, ToolUsingAgent, make_default_tools
