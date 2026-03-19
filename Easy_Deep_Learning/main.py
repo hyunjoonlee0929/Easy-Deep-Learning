@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--target-column", type=str, required=True, help="Target column name")
     train.add_argument("--task-type", choices=["classification", "regression"], required=True)
     train.add_argument("--model-type", choices=["auto", "dnn", "xgboost", "rf", "svm", "knn", "lr", "gbm"], default="dnn")
-    train.add_argument("--config", type=Path, default=Path("Easy_Deep_Learning/config/model_config.yaml"))
+    train.add_argument("--config", type=Path, default=Path("config/model_config.yaml"))
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--model-params", type=str, default="{}", help="JSON string of model hyperparameters")
 
@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     automl.add_argument("--data", type=Path, required=True, help="Training CSV path")
     automl.add_argument("--target-column", type=str, required=True, help="Target column name")
     automl.add_argument("--task-type", choices=["classification", "regression"], required=True)
-    automl.add_argument("--config", type=Path, default=Path("Easy_Deep_Learning/config/model_config.yaml"))
+    automl.add_argument("--config", type=Path, default=Path("config/model_config.yaml"))
     automl.add_argument("--seed", type=int, default=42)
     automl.add_argument("--max-models", type=int, default=6)
 
@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     tune.add_argument("--target-column", type=str, required=True, help="Target column name")
     tune.add_argument("--task-type", choices=["classification", "regression"], required=True)
     tune.add_argument("--model-type", choices=["xgboost", "rf", "svm", "knn", "lr", "gbm"], required=True)
-    tune.add_argument("--config", type=Path, default=Path("Easy_Deep_Learning/config/model_config.yaml"))
+    tune.add_argument("--config", type=Path, default=Path("config/model_config.yaml"))
     tune.add_argument("--seed", type=int, default=42)
     tune.add_argument("--max-trials", type=int, default=10)
 
@@ -134,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     ft_llm.add_argument("--lora-r", type=int, default=8)
     ft_llm.add_argument("--lora-alpha", type=int, default=16)
     ft_llm.add_argument("--lora-dropout", type=float, default=0.05)
+    ft_llm.add_argument("--eval-size", type=float, default=0.1)
 
     ft_img = subparsers.add_parser("finetune-image", help="Fine-tune a pretrained image model on a folder dataset")
     ft_img.add_argument("--data-dir", type=Path, required=True, help="Folder with class subfolders")
@@ -451,6 +452,7 @@ def main() -> None:
             lora_r=args.lora_r,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
+            eval_size=args.eval_size,
         )
         payload = {
             "project": "Easy Deep Learning",

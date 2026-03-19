@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import json
+import math
 import pandas as pd
 
 from Easy_Deep_Learning.core.experiment_tracker import ExperimentTracker
@@ -18,6 +19,28 @@ class LLMFineTuneResult:
     run_id: str
     run_path: Path
     metrics: dict[str, float]
+
+
+SAFE_INFERENCE_PRESETS: dict[str, dict[str, Any]] = {
+    "conservative": {
+        "max_new_tokens": 128,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "do_sample": False,
+    },
+    "balanced": {
+        "max_new_tokens": 196,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "do_sample": True,
+    },
+    "creative": {
+        "max_new_tokens": 256,
+        "temperature": 0.95,
+        "top_p": 0.95,
+        "do_sample": True,
+    },
+}
 
 
 def _load_prompt_dataset(path: Path, prompt_col: str, completion_col: str) -> list[str]:
@@ -36,6 +59,78 @@ def _load_prompt_dataset(path: Path, prompt_col: str, completion_col: str) -> li
     return (df[prompt_col].astype(str) + df[completion_col].astype(str)).tolist()
 
 
+def validate_llm_dataset(
+    data_path: Path,
+    prompt_column: str,
+    completion_column: str,
+    min_rows: int = 8,
+) -> dict[str, Any]:
+    """Validate LLM fine-tuning dataset format and content quality."""
+    if not data_path.exists():
+        raise FileNotFoundError(f"Dataset not found: {data_path}")
+
+    if data_path.suffix.lower() == ".jsonl":
+        rows = []
+        for line in data_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rows.append(json.loads(line))
+        if not rows:
+            raise ValueError("JSONL dataset is empty.")
+        missing_prompt = sum(1 for r in rows if not str(r.get(prompt_column, "")).strip())
+        missing_completion = sum(1 for r in rows if not str(r.get(completion_column, "")).strip())
+        texts = [(str(r.get(prompt_column, "")) + str(r.get(completion_column, ""))).strip() for r in rows]
+    else:
+        df = pd.read_csv(data_path)
+        if prompt_column not in df.columns or completion_column not in df.columns:
+            raise ValueError("Prompt/completion columns not found.")
+        missing_prompt = int(df[prompt_column].astype(str).str.strip().eq("").sum())
+        missing_completion = int(df[completion_column].astype(str).str.strip().eq("").sum())
+        texts = (df[prompt_column].astype(str) + df[completion_column].astype(str)).tolist()
+
+    row_count = len(texts)
+    if row_count < min_rows:
+        raise ValueError(f"Dataset is too small for practical fine-tuning: {row_count} rows (< {min_rows}).")
+
+    lengths = [len(t) for t in texts]
+    mean_len = float(sum(lengths) / max(1, len(lengths)))
+    payload = {
+        "row_count": int(row_count),
+        "missing_prompt_count": int(missing_prompt),
+        "missing_completion_count": int(missing_completion),
+        "avg_text_length": mean_len,
+        "min_text_length": int(min(lengths)),
+        "max_text_length": int(max(lengths)),
+    }
+    if payload["missing_prompt_count"] > 0 or payload["missing_completion_count"] > 0:
+        raise ValueError("Dataset contains empty prompt/completion rows.")
+    return payload
+
+
+def _quality_baseline(eval_metrics: dict[str, float]) -> dict[str, Any]:
+    """Compute basic quality baseline report from eval metrics."""
+    eval_loss = float(eval_metrics.get("eval_loss", 999.0))
+    perplexity = float(math.exp(min(eval_loss, 20.0)))
+    quality = {
+        "eval_loss": eval_loss,
+        "perplexity": perplexity,
+        "thresholds": {
+            "max_eval_loss": 5.0,
+            "max_perplexity": 150.0,
+        },
+    }
+    quality["pass"] = bool(
+        eval_loss <= quality["thresholds"]["max_eval_loss"]
+        and perplexity <= quality["thresholds"]["max_perplexity"]
+    )
+    return quality
+
+
+def get_safe_generation_preset(name: str = "balanced") -> dict[str, Any]:
+    """Return a named safe inference preset."""
+    return dict(SAFE_INFERENCE_PRESETS.get((name or "balanced").lower(), SAFE_INFERENCE_PRESETS["balanced"]))
+
+
 def finetune_llm_lora(
     data_path: Path,
     model_name: str,
@@ -49,6 +144,7 @@ def finetune_llm_lora(
     lora_r: int = 8,
     lora_alpha: int = 16,
     lora_dropout: float = 0.05,
+    eval_size: float = 0.1,
     reuse_if_exists: bool = True,
 ) -> LLMFineTuneResult:
     """Fine-tune a causal LM with LoRA on prompt+completion text."""
@@ -62,6 +158,11 @@ def finetune_llm_lora(
 
     tracker = ExperimentTracker(base_dir=Path("runs"))
     data_hash = tracker.file_hash(data_path)
+    dataset_validation = validate_llm_dataset(
+        data_path=data_path,
+        prompt_column=prompt_column,
+        completion_column=completion_column,
+    )
     metadata = {
         "data_hash": data_hash,
         "model_name": model_name,
@@ -75,6 +176,7 @@ def finetune_llm_lora(
         "lora_r": lora_r,
         "lora_alpha": lora_alpha,
         "lora_dropout": lora_dropout,
+        "eval_size": eval_size,
     }
     if reuse_if_exists:
         existing = tracker.find_matching_run("llm_finetune", metadata)
@@ -86,7 +188,8 @@ def finetune_llm_lora(
 
     texts = _load_prompt_dataset(data_path, prompt_column, completion_column)
     dataset = Dataset.from_dict({"text": texts})
-    dataset = dataset.train_test_split(test_size=0.1, seed=seed)
+    eval_size = float(min(max(eval_size, 0.05), 0.4))
+    dataset = dataset.train_test_split(test_size=eval_size, seed=seed)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
@@ -135,11 +238,15 @@ def finetune_llm_lora(
     )
     trainer.train()
     eval_metrics = trainer.evaluate()
+    quality = _quality_baseline({k: float(v) for k, v in eval_metrics.items()})
 
     run_id, run_path = tracker.create_run(model_type="llm_finetune")
     tracker.save_json(run_path / "metrics.json", {k: float(v) for k, v in eval_metrics.items()})
     tracker.save_json(run_path / "model_info.json", {"model_type": "llm_finetune", "model_name": model_name})
     tracker.save_json(run_path / "run_metadata.json", {"model_type": "llm_finetune", **metadata})
+    tracker.save_json(run_path / "dataset_validation.json", dataset_validation)
+    tracker.save_json(run_path / "quality_baseline.json", quality)
+    tracker.save_json(run_path / "safe_inference_presets.json", SAFE_INFERENCE_PRESETS)
 
     model.save_pretrained(run_path / "adapter")
     tokenizer.save_pretrained(run_path / "tokenizer")
@@ -183,6 +290,7 @@ def load_lora_model(run_path: Path):
 def generate_with_lora(
     run_path: Path,
     prompt: str,
+    preset: str = "balanced",
     max_new_tokens: int = 128,
     temperature: float = 0.7,
     top_p: float = 0.9,
@@ -192,6 +300,11 @@ def generate_with_lora(
     import torch
 
     model, tokenizer = load_lora_model(run_path)
+    base = get_safe_generation_preset(preset)
+    max_new_tokens = int(max(16, min(int(max_new_tokens or base["max_new_tokens"]), 512)))
+    temperature = float(max(0.0, min(float(temperature if temperature is not None else base["temperature"]), 1.2)))
+    top_p = float(max(0.1, min(float(top_p if top_p is not None else base["top_p"]), 1.0)))
+    do_sample = bool(do_sample if do_sample is not None else base["do_sample"])
     inputs = tokenizer(prompt, return_tensors="pt")
     with torch.no_grad():
         outputs = model.generate(
@@ -230,6 +343,7 @@ def generate_chat_with_lora(
     return generate_with_lora(
         run_path=run_path,
         prompt=prompt,
+        preset="balanced",
         max_new_tokens=max_new_tokens,
         temperature=temperature,
         top_p=top_p,

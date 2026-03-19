@@ -172,6 +172,21 @@ runs/{run_id}/
 └── ... (explainability/report artifacts)
 ```
 
+## Advanced Modeling Features
+
+- Imbalanced data defaults
+  - Auto class imbalance detection (`imbalance_report.json`)
+  - Auto resampling (over/under) and class-weight/sample-weight 적용
+  - Binary threshold tuning (`threshold_report.json`)
+- Prediction confidence
+  - Classification probability calibration (`calibration_report.json`)
+  - Regression prediction interval (`prediction_interval.json`)
+- LLM fine-tuning hardening
+  - Prompt/completion 데이터 포맷 검증 (`dataset_validation.json`)
+  - Eval split 비율 제어 (`--eval-size`)
+  - Perplexity/eval-loss 기준선 (`quality_baseline.json`)
+  - Safe inference presets (`safe_inference_presets.json`)
+
 ## Positioning (Portfolio)
 
 이 프로젝트는 “모델 하나를 학습하는 코드”가 아니라,  

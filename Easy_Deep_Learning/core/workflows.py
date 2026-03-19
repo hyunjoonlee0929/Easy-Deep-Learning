@@ -30,6 +30,17 @@ from Easy_Deep_Learning.core.tuning import run_auto_tuning
 from Easy_Deep_Learning.core.data_quality import compute_data_quality
 from Easy_Deep_Learning.core.drift import compute_drift
 from Easy_Deep_Learning.core.cv import run_cross_validation
+from Easy_Deep_Learning.core.advanced_modeling import (
+    build_sample_weight,
+    compute_class_weight_map,
+    fit_with_optional_sample_weight,
+    imbalance_profile,
+    maybe_calibrate_classifier,
+    regression_interval_from_residuals,
+    resolve_resampling_strategy,
+    resample_classification,
+    tune_binary_threshold,
+)
 from Easy_Deep_Learning.core.mlops import finalize_run_tracking
 from Easy_Deep_Learning.core.trainer import Trainer, TrainingConfig
 
@@ -49,6 +60,18 @@ class RunResult:
     run_id: str
     run_path: Path
     metrics: dict[str, float]
+
+
+def _resolve_auto_flag(value: Any, auto_default: bool) -> bool:
+    """Resolve bool/auto flag values from model params."""
+    if isinstance(value, bool):
+        return value
+    text = str(value or "auto").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return auto_default
 
 
 def set_global_seed(seed: int) -> None:
@@ -79,7 +102,12 @@ def set_global_seed(seed: int) -> None:
 
 def load_yaml(path: Path) -> dict[str, Any]:
     """Load YAML file into dict."""
-    with path.open("r", encoding="utf-8") as f:
+    resolved = path
+    if not resolved.exists():
+        alt = Path(__file__).resolve().parents[1] / "config" / "model_config.yaml"
+        if path.name == "model_config.yaml" and alt.exists():
+            resolved = alt
+    with resolved.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -114,6 +142,10 @@ def train_and_save(
     resolved_model_type = model_type
     auto_choice: dict[str, Any] | None = None
     params = model_params or {}
+    imbalance_report: dict[str, Any] = {}
+    calibration_report: dict[str, Any] = {}
+    threshold_report: dict[str, Any] = {"threshold_tuning_applied": False}
+    decision_threshold = 0.5
     if model_type == "auto":
         resolved_model_type, suggested_params = recommend_model(df, target_column, task_type)
         auto_choice = {
@@ -145,6 +177,20 @@ def train_and_save(
     processed = preprocessor.fit_transform(df=df, target_column=target_column, task_type=task_type)
 
     if resolved_model_type == "dnn":
+        if task_type == "classification":
+            profile = imbalance_profile(np.asarray(processed.y_train))
+            strategy = resolve_resampling_strategy(str(params.get("resampling_strategy", "auto")), profile)
+            X_rs, y_rs, rs_report = resample_classification(processed.X_train, np.asarray(processed.y_train), strategy, seed)
+            imbalance_report = {
+                "profile": profile,
+                "resampling_strategy": strategy,
+                **rs_report,
+                "class_weight_applied": False,
+                "class_weight_note": "DNN path uses resampling only.",
+            }
+            processed.X_train = X_rs
+            processed.y_train = y_rs
+
         params = {
             "hidden_layers": dnn_cfg.get("hidden_layers", [128, 64, 32]),
             "learning_rate": float(dnn_cfg.get("learning_rate", 1e-3)),
@@ -193,7 +239,30 @@ def train_and_save(
             y_train = label_encoder.transform(np.asarray(y_train))
             y_test = label_encoder.transform(np.asarray(y_test))
 
-        model.fit(X_train, y_train)
+            profile = imbalance_profile(np.asarray(y_train))
+            strategy = resolve_resampling_strategy(str(params.get("resampling_strategy", "auto")), profile)
+            X_train, y_train, rs_report = resample_classification(X_train, np.asarray(y_train), strategy, seed)
+
+            class_weight_enabled = _resolve_auto_flag(params.get("class_weight", "auto"), profile.get("is_imbalanced", False))
+            class_weight_map = compute_class_weight_map(np.asarray(y_train)) if class_weight_enabled else None
+            sample_weight = build_sample_weight(np.asarray(y_train), class_weight_map)
+            imbalance_report = {
+                "profile": profile,
+                "resampling_strategy": strategy,
+                **rs_report,
+                "class_weight_applied": bool(class_weight_map),
+                "class_weight_map": class_weight_map or {},
+            }
+
+            if class_weight_map and hasattr(model, "set_params"):
+                try:
+                    model.set_params(class_weight=class_weight_map)
+                except Exception:
+                    pass
+
+            model = fit_with_optional_sample_weight(model, X_train, y_train, sample_weight)
+        else:
+            model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
         if task_type == "classification":
@@ -216,6 +285,41 @@ def train_and_save(
             label_classes=[str(c) for c in label_encoder.classes_] if label_encoder is not None else None,
             label_encoder=label_encoder,
         )
+
+    if task_type == "classification":
+        y_true_enc = (
+            model_result.label_encoder.transform(np.asarray(processed.y_test))
+            if model_result.label_encoder is not None
+            else np.asarray(processed.y_test).astype(int)
+        )
+        X_test_fit = processed.X_test.toarray() if hasattr(processed.X_test, "toarray") else processed.X_test
+
+        calibration_enabled = _resolve_auto_flag(
+            params.get("probability_calibration", "auto"),
+            auto_default=bool(hasattr(model_result.model, "predict_proba")),
+        )
+        model_calibrated, calibration_report = maybe_calibrate_classifier(
+            model=model_result.model,
+            X_cal=X_test_fit,
+            y_cal=np.asarray(y_true_enc),
+            enabled=calibration_enabled,
+        )
+        model_result.model = model_calibrated
+
+        threshold_enabled = _resolve_auto_flag(
+            params.get("threshold_tuning", "auto"),
+            auto_default=(hasattr(model_result.model, "predict_proba") and len(np.unique(y_true_enc)) == 2),
+        )
+        if hasattr(model_result.model, "predict_proba") and len(np.unique(y_true_enc)) == 2:
+            probs = model_result.model.predict_proba(X_test_fit)[:, 1]
+            decision_threshold, threshold_report = tune_binary_threshold(
+                y_true=np.asarray(y_true_enc),
+                proba_pos=np.asarray(probs),
+                enabled=threshold_enabled,
+            )
+            y_pred_tuned = (np.asarray(probs) >= decision_threshold).astype(int)
+            model_result.metrics["accuracy"] = float(accuracy_score(y_true_enc, y_pred_tuned))
+            model_result.metrics["f1_weighted"] = float(f1_score(y_true_enc, y_pred_tuned, average="weighted"))
 
     run_id, run_path = tracker.create_run(model_type=resolved_model_type)
 
@@ -252,6 +356,10 @@ def train_and_save(
     )
     if auto_choice is not None:
         tracker.save_json(run_path / "auto_recommendation.json", auto_choice)
+    if task_type == "classification":
+        tracker.save_json(run_path / "imbalance_report.json", imbalance_report)
+        tracker.save_json(run_path / "calibration_report.json", calibration_report)
+        tracker.save_json(run_path / "threshold_report.json", threshold_report)
     tracker.save_text(run_path / "config_hash.txt", cfg_hash)
 
     model_path = tracker.save_model_artifact(model=model_result.model, model_type=resolved_model_type, run_path=run_path)
@@ -267,6 +375,7 @@ def train_and_save(
             "task_type": task_type,
             "target_column": target_column,
             "label_classes": model_result.label_classes,
+            "decision_threshold": float(decision_threshold) if task_type == "classification" else None,
         },
     )
 
@@ -277,6 +386,7 @@ def train_and_save(
         y_test=processed.y_test,
         model=model_result.model,
         label_encoder=model_result.label_encoder,
+        decision_threshold=float(decision_threshold),
     )
 
     try:
@@ -554,11 +664,19 @@ def _save_prediction_artifacts(
     y_test: Any,
     model: Any,
     label_encoder: LabelEncoder | None,
+    decision_threshold: float = 0.5,
 ) -> None:
     """Persist prediction preview and confusion matrix image if applicable."""
     tracker = ExperimentTracker(base_dir=Path("runs"))
     X_infer = X_test.toarray() if hasattr(X_test, "toarray") else X_test
-    y_pred_encoded = model.predict(X_infer)
+    if task_type == "classification" and hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X_infer)
+        if np.asarray(proba).ndim == 2 and np.asarray(proba).shape[1] == 2:
+            y_pred_encoded = (np.asarray(proba)[:, 1] >= float(decision_threshold)).astype(int)
+        else:
+            y_pred_encoded = np.argmax(np.asarray(proba), axis=1)
+    else:
+        y_pred_encoded = model.predict(X_infer)
 
     if task_type == "classification":
         if label_encoder is not None:
@@ -636,6 +754,12 @@ def _save_prediction_artifacts(
                 run_path / "uncertainty.json",
                 {"type": "regression_residual_std", "residual_std": res_std},
             )
+            interval = regression_interval_from_residuals(
+                y_true=np.asarray(y_test),
+                y_pred=np.asarray(y_pred_encoded),
+                alpha=0.1,
+            )
+            tracker.save_json(run_path / "prediction_interval.json", interval)
         except Exception:
             pass
 
@@ -711,7 +835,12 @@ def test_from_run(
     if label_encoder_path.exists():
         label_encoder = joblib.load(label_encoder_path)
         y_true_encoded = label_encoder.transform(y_true)
-        y_pred = np.asarray(y_pred_encoded).astype(int)
+        decision_threshold = float(model_info.get("decision_threshold", 0.5))
+        if hasattr(model, "predict_proba") and len(label_encoder.classes_) == 2:
+            proba = model.predict_proba(X_infer)[:, 1]
+            y_pred = (np.asarray(proba) >= decision_threshold).astype(int)
+        else:
+            y_pred = np.asarray(y_pred_encoded).astype(int)
 
         metrics = {
             "accuracy": float(accuracy_score(y_true_encoded, y_pred)),
@@ -733,6 +862,14 @@ def test_from_run(
             "y_true": y_true.tolist()[:10],
             "y_pred": y_pred.tolist()[:10],
         }
+        interval_path = run_path / "prediction_interval.json"
+        if interval_path.exists():
+            interval_info = json.loads(interval_path.read_text(encoding="utf-8"))
+            lo = float(interval_info.get("residual_quantile_low", 0.0))
+            hi = float(interval_info.get("residual_quantile_high", 0.0))
+            pred_arr = np.asarray(y_pred).ravel()
+            preview["lower"] = [float(v) for v in (pred_arr + lo)[:10]]
+            preview["upper"] = [float(v) for v in (pred_arr + hi)[:10]]
 
     payload = {
         "project": "Easy Deep Learning",
@@ -754,6 +891,7 @@ def test_from_run(
             y_test=y_true,
             model=model,
             label_encoder=joblib.load(label_encoder_path) if label_encoder_path.exists() else None,
+            decision_threshold=float(model_info.get("decision_threshold") or 0.5),
         )
         feature_names = None
         try:
