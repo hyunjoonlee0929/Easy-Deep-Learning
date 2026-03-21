@@ -222,8 +222,3 @@ runs/{run_id}/
   - Eval split 비율 제어 (`--eval-size`)
   - Perplexity/eval-loss 기준선 (`quality_baseline.json`)
   - Safe inference presets (`safe_inference_presets.json`)
-
-## Positioning (Portfolio)
-
-이 프로젝트는 “모델 하나를 학습하는 코드”가 아니라,  
-**실험-해석-리포트-서빙까지 연결한 AI 플랫폼 설계/구현 역량**을 보여주는 포트폴리오 프로젝트입니다.
